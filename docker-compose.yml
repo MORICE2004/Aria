@@ -1,0 +1,41 @@
+# Local infrastructure for ARIA: PostgreSQL (with the pgvector extension for
+# RAG embeddings, added in Phase 2) and Redis (cache + background job queues).
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down        (data survives — it lives in named volumes)
+
+services:
+  postgres:
+    # pgvector/pgvector = official PostgreSQL image + the vector extension preinstalled
+    image: pgvector/pgvector:pg16
+    container_name: aria-postgres
+    environment:
+      POSTGRES_USER: aria
+      POSTGRES_PASSWORD: aria_dev_password  # local dev only; production uses a secret manager
+      POSTGRES_DB: aria
+    ports:
+      - "5432:5432"
+    volumes:
+      - aria_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aria"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: aria-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - aria_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  aria_pgdata:
+  aria_redisdata:

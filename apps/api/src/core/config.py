@@ -1,0 +1,40 @@
+"""Application configuration.
+
+All settings come from environment variables (loaded from the `.env` file in
+the repo root during development). This is the ONLY place in the codebase that
+reads the environment — everything else imports `settings` from here, so there
+is a single source of truth and no secret is ever hard-coded.
+"""
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The .env file lives at the repo root (two levels above apps/api).
+_ENV_FILE = Path(__file__).resolve().parents[3].parent / ".env"
+
+
+class Settings(BaseSettings):
+    """Typed application settings.
+
+    Each field is validated on startup: if a required value is missing or has
+    the wrong type, the app fails loudly at boot instead of mysteriously later.
+    """
+
+    app_env: str = "development"
+    log_level: str = "INFO"
+
+    database_url: str = "postgresql+asyncpg://aria:aria_dev_password@localhost:5432/aria"
+    redis_url: str = "redis://localhost:6379/0"
+
+    # LLM keys are optional in Phase 0; Phase 1 will require anthropic_api_key.
+    anthropic_api_key: str = ""
+
+    model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Return the settings singleton (cached so .env is parsed only once)."""
+    return Settings()

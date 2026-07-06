@@ -1,0 +1,10 @@
+# ARIA API dependencies — Phase 0.
+# Pinned to major.minor so installs are reproducible but still get patch fixes.
+
+fastapi~=0.115           # web framework: routing, validation, auto docs
+uvicorn[standard]~=0.34  # ASGI server that runs the app
+pydantic-settings~=2.7   # loads typed settings from .env
+
+# Development / testing
+pytest~=8.3
+httpx~=0.28              # HTTP client used by FastAPI's test client
