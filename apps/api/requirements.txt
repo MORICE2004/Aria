@@ -1,10 +1,20 @@
-# ARIA API dependencies — Phase 0.
+# ARIA API dependencies — Phase 1.
 # Pinned to major.minor so installs are reproducible but still get patch fixes.
 
 fastapi~=0.115           # web framework: routing, validation, auto docs
 uvicorn[standard]~=0.34  # ASGI server that runs the app
 pydantic-settings~=2.7   # loads typed settings from .env
 
+# Database (Phase 1)
+sqlalchemy[asyncio]~=2.0 # ORM: Python classes <-> database tables
+asyncpg~=0.30            # async PostgreSQL driver
+greenlet~=3.1            # required by SQLAlchemy's async mode
+
+# LLM (Phase 1)
+anthropic~=0.43          # official Claude SDK — used ONLY inside src/llm/claude.py
+
 # Development / testing
 pytest~=8.3
+pytest-asyncio~=0.25     # lets tests await async code
 httpx~=0.28              # HTTP client used by FastAPI's test client
+aiosqlite~=0.20          # in-memory SQLite driver so tests need no Postgres

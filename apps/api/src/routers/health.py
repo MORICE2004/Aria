@@ -24,4 +24,4 @@ class HealthResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     """Report that the API is up."""
-    return HealthResponse(status="ok", env=get_settings().app_env, version="0.1.0")
+    return HealthResponse(status="ok", env=get_settings().app_env, version="0.2.0")

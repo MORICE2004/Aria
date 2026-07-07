@@ -5,13 +5,22 @@ Interactive API docs are auto-generated at http://localhost:8000/docs
 """
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.core.config import get_settings
 from src.core.logging import configure_logging
-from src.routers import health
+from src.db import init_db
+from src.routers import chat, health
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup/shutdown hooks. Before serving requests: ensure DB tables exist."""
+    await init_db()
+    yield
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -29,7 +38,8 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="ARIA API",
         description="Personal AI assistant backend — agents, memory, action gateway.",
-        version="0.1.0",
+        version="0.2.0",
+        lifespan=lifespan,
     )
 
     # CORS: the browser blocks cross-origin requests unless the API allows them.
@@ -43,6 +53,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(health.router)
+    app.include_router(chat.router)
 
     logger.info("ARIA API started (env=%s)", settings.app_env)
     return app

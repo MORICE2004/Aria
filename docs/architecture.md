@@ -47,7 +47,7 @@ other code path from agent to outside world.
 ## Roadmap
 
 0. Scaffold + infra (this repo skeleton) ✅
-1. Core chat: LLM abstraction, streaming chat, persisted conversations, auth
+1. Core chat: LLM abstraction, streaming chat, persisted conversations ✅ (auth moved to Phase 3, see docs/phase-1.md)
 2. Memory & RAG: pgvector, document upload, memory viewer, writing-style profile
 3. Agent framework: LangGraph orchestrator + **Action Gateway** + audit log
 4. Communication agent: paste-in drafting, Gmail OAuth (draft-only send)
