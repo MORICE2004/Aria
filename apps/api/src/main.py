@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.core.config import get_settings
 from src.core.logging import configure_logging
 from src.db import init_db
-from src.routers import chat, health
+from src.routers import chat, health, memory
 
 
 @asynccontextmanager
@@ -54,6 +54,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(chat.router)
+    app.include_router(memory.router)
 
     logger.info("ARIA API started (env=%s)", settings.app_env)
     return app

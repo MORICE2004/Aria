@@ -13,6 +13,10 @@ greenlet~=3.1            # required by SQLAlchemy's async mode
 # LLM (Phase 1)
 anthropic~=0.43          # official Claude SDK — used ONLY inside src/llm/claude.py
 
+# Memory / RAG (Phase 2)
+pgvector~=0.3            # SQLAlchemy support for the pgvector column type
+fastembed~=0.5           # local CPU embeddings — free, private, no extra API key
+
 # Development / testing
 pytest~=8.3
 pytest-asyncio~=0.25     # lets tests await async code

@@ -33,9 +33,14 @@ async def init_db() -> None:
     Fine for a personal project at this stage; when the schema starts
     evolving we will switch to real migrations (Alembic).
     """
+    from sqlalchemy import text
+
     from src import models  # noqa: F401  (import registers the tables on Base)
 
     async with engine.begin() as conn:
+        if conn.dialect.name == "postgresql":
+            # Enable pgvector before creating tables that use vector columns.
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
 
 

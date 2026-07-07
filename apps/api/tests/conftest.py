@@ -20,6 +20,9 @@ from src.db import Base, get_session
 from src.llm import get_llm_provider
 from src.llm.base import ChatMessage, LLMProvider
 from src.main import create_app
+from src.memory import get_memory_service
+from src.memory.embeddings import EMBEDDING_DIM, EmbeddingProvider
+from src.memory.service import MemoryService
 
 
 class FakeLLM(LLMProvider):
@@ -30,6 +33,24 @@ class FakeLLM(LLMProvider):
     ) -> AsyncIterator[str]:
         yield "Echo: "
         yield messages[-1].content
+
+
+class FakeEmbedder(EmbeddingProvider):
+    """Deterministic embeddings based on word overlap — no model download.
+
+    Each word deterministically lights up a few vector positions, so texts
+    sharing words get similar vectors. Crude, but it makes similarity search
+    testable and fully predictable.
+    """
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        vectors = []
+        for text in texts:
+            vector = [0.0] * EMBEDDING_DIM
+            for word in text.lower().split():
+                vector[hash(word) % EMBEDDING_DIM] += 1.0
+            vectors.append(vector)
+        return vectors
 
 
 @pytest.fixture
@@ -48,6 +69,9 @@ def client() -> TestClient:
     app = create_app()
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_llm_provider] = lambda: FakeLLM()
+    app.dependency_overrides[get_memory_service] = lambda: MemoryService(
+        embedder=FakeEmbedder()
+    )
 
     # Create the tables in the test database. (We deliberately do NOT enter
     # the app's lifespan — that would call init_db() against the real

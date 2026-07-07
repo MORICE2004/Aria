@@ -21,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.db import SessionMaker, get_session
 from src.llm import get_llm_provider
 from src.llm.base import ChatMessage, LLMProvider
+from src.memory import get_memory_service
+from src.memory.service import MemoryService
 from src.models import Conversation, Message
 
 logger = logging.getLogger(__name__)
@@ -96,9 +98,24 @@ async def send_message(
     body: SendMessageIn,
     session: AsyncSession = Depends(get_session),
     llm: LLMProvider = Depends(get_llm_provider),
+    memory: MemoryService = Depends(get_memory_service),
 ) -> StreamingResponse:
     """Save the user message, then stream the assistant's reply as plain text."""
     conversation = await _get_conversation_or_404(session, conversation_id)
+
+    # RAG: fetch memories relevant to this message and give them to the model.
+    # Only well-matching hits are included — irrelevant context hurts quality.
+    hits = await memory.search(session, body.content, k=4)
+    relevant = [h for h in hits if h.score >= 0.55]
+    system_prompt = SYSTEM_PROMPT
+    if relevant:
+        memory_block = "\n\n".join(
+            f"[{h.kind}: {h.title}]\n{h.content}" for h in relevant
+        )
+        system_prompt += (
+            "\n\nRelevant entries from MORICE's personal memory (use them when "
+            "helpful; do not invent memories that are not listed):\n" + memory_block
+        )
 
     # Load prior history BEFORE adding the new message, then append it.
     result = await session.execute(
@@ -119,7 +136,7 @@ async def send_message(
         """Yield chunks to the browser; persist the full reply at the end."""
         parts: list[str] = []
         try:
-            async for chunk in llm.stream_chat(history, system=SYSTEM_PROMPT):
+            async for chunk in llm.stream_chat(history, system=system_prompt):
                 parts.append(chunk)
                 yield chunk
         finally:

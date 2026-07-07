@@ -19,7 +19,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : res.json();
 }
 
+export type MemoryItem = {
+  id: string;
+  title: string;
+  kind: "note" | "document" | "fact" | "style";
+  content: string;
+};
+export type MemoryHit = MemoryItem & { item_id: string; score: number };
+
 export const api = {
+  listMemories: () => request<MemoryItem[]>("/memory"),
+  addMemory: (m: Pick<MemoryItem, "title" | "content" | "kind">) =>
+    request<MemoryItem>("/memory", { method: "POST", body: JSON.stringify(m) }),
+  deleteMemory: (id: string) => request<void>(`/memory/${id}`, { method: "DELETE" }),
+  searchMemories: (q: string) =>
+    request<MemoryHit[]>(`/memory/search?q=${encodeURIComponent(q)}`),
+
   listConversations: () => request<Conversation[]>("/conversations"),
   createConversation: () => request<Conversation>("/conversations", { method: "POST" }),
   deleteConversation: (id: string) =>
