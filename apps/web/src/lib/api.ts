@@ -27,7 +27,34 @@ export type MemoryItem = {
 };
 export type MemoryHit = MemoryItem & { item_id: string; score: number };
 
+export type ActionRequest = {
+  id: string;
+  agent: string;
+  action_type: string;
+  summary: string;
+  payload: Record<string, unknown>;
+  status: "pending" | "approved" | "executed" | "rejected" | "failed";
+  result: string;
+};
+export type AuditEvent = { event: string; detail: string; created_at: string };
+
 export const api = {
+  listActions: (status?: string) =>
+    request<ActionRequest[]>(`/actions${status ? `?status=${status}` : ""}`),
+  approveAction: (id: string) =>
+    request<ActionRequest>(`/actions/${id}/approve`, { method: "POST" }),
+  rejectAction: (id: string, reason: string) =>
+    request<ActionRequest>(`/actions/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    }),
+  getAudit: (id: string) => request<AuditEvent[]>(`/actions/${id}/audit`),
+  createDemoAction: (message: string) =>
+    request<ActionRequest>("/actions/demo", {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+
   listMemories: () => request<MemoryItem[]>("/memory"),
   addMemory: (m: Pick<MemoryItem, "title" | "content" | "kind">) =>
     request<MemoryItem>("/memory", { method: "POST", body: JSON.stringify(m) }),

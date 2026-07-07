@@ -114,3 +114,40 @@ class MemoryChunk(Base):
     embedding: Mapped[list[float]] = mapped_column(EmbeddingColumn)
 
     item: Mapped[MemoryItem] = relationship(back_populates="chunks")
+
+
+class ActionRequest(Base):
+    """A sensitive action an agent WANTS to perform — pending human approval.
+
+    Status flow:  pending -> approved -> executed | failed
+                  pending -> rejected
+    Nothing outward-facing ever happens except by executing an approved row.
+    """
+
+    __tablename__ = "action_requests"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    agent: Mapped[str] = mapped_column(String(50))        # who asked, e.g. "communication"
+    action_type: Mapped[str] = mapped_column(String(50))  # what, e.g. "email.send"
+    summary: Mapped[str] = mapped_column(String(500))     # human-readable description
+    payload: Mapped[dict] = mapped_column(JSON)           # exact data to act on
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    result: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class AuditEvent(Base):
+    """Append-only audit log. There is deliberately NO update or delete path
+    for this table anywhere in the codebase — history cannot be rewritten.
+    """
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    action_request_id: Mapped[str] = mapped_column(String(36), index=True)
+    event: Mapped[str] = mapped_column(String(30))  # submitted|approved|rejected|executed|failed
+    detail: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
