@@ -9,12 +9,26 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 export type Conversation = { id: string; title: string };
 export type Message = { id: string; role: "user" | "assistant"; content: string };
 
+/** The login token lives in localStorage; every request attaches it. */
+function authHeaders(): Record<string, string> {
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("aria_token") : null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...init?.headers },
   });
-  if (!res.ok) throw new Error(`API error ${res.status} on ${path}`);
+  if (res.status === 401 && typeof window !== "undefined") {
+    window.location.href = "/login"; // token missing/expired — go log in
+  }
+  if (!res.ok) {
+    // Surface the API's explanation when it has one (e.g. "SMTP not configured").
+    const detail = await res.json().then((b) => b.detail).catch(() => null);
+    throw new Error(detail || `API error ${res.status} on ${path}`);
+  }
   // 204 No Content has no body to parse.
   return res.status === 204 ? (undefined as T) : res.json();
 }
@@ -39,6 +53,29 @@ export type ActionRequest = {
 export type AuditEvent = { event: string; detail: string; created_at: string };
 
 export const api = {
+  authStatus: () => request<{ auth_enabled: boolean }>("/auth/status"),
+  login: (password: string) =>
+    request<{ token: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  draftReply: (platform: string, conversation: string, instructions: string) =>
+    request<{ text: string }>("/communication/draft", {
+      method: "POST",
+      body: JSON.stringify({ platform, conversation, instructions }),
+    }),
+  summarize: (conversation: string) =>
+    request<{ text: string }>("/communication/summarize", {
+      method: "POST",
+      body: JSON.stringify({ conversation }),
+    }),
+  requestEmailSend: (to: string, subject: string, body: string) =>
+    request<ActionRequest>("/communication/email-request", {
+      method: "POST",
+      body: JSON.stringify({ to, subject, body }),
+    }),
+
   listActions: (status?: string) =>
     request<ActionRequest[]>(`/actions${status ? `?status=${status}` : ""}`),
   approveAction: (id: string) =>

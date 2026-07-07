@@ -10,10 +10,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi import Depends
+
 from src.core.config import get_settings
 from src.core.logging import configure_logging
+from src.core.security import require_auth
 from src.db import init_db
-from src.routers import actions, chat, health, memory
+from src.routers import actions, auth, chat, communication, health, memory
 
 
 @asynccontextmanager
@@ -52,10 +55,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Public: health (monitoring) and auth (you must be able to log in).
     app.include_router(health.router)
-    app.include_router(chat.router)
-    app.include_router(memory.router)
-    app.include_router(actions.router)
+    app.include_router(auth.router)
+    # Protected: everything with personal data requires a valid token
+    # (require_auth is a no-op while ARIA_PASSWORD is unset — dev mode).
+    protected = [Depends(require_auth)]
+    app.include_router(chat.router, dependencies=protected)
+    app.include_router(memory.router, dependencies=protected)
+    app.include_router(actions.router, dependencies=protected)
+    app.include_router(communication.router, dependencies=protected)
 
     logger.info("ARIA API started (env=%s)", settings.app_env)
     return app

@@ -50,7 +50,7 @@ other code path from agent to outside world.
 1. Core chat: LLM abstraction, streaming chat, persisted conversations ✅ (auth moved to Phase 3, see docs/phase-1.md)
 2. Memory & RAG: pgvector, local embeddings, memory viewer, RAG-augmented chat ✅
 3. Agent registry + **Action Gateway** + audit log + approvals UI ✅ (LangGraph + auth move to Phase 4, next to their first real use)
-4. Communication agent: paste-in drafting, Gmail OAuth (draft-only send)
+4. Communication agent: paste-in drafting, SMTP email via gateway, JWT auth ✅ (OAuth later; swap inside the email.send executor)
 5. Job search agent: matching, scoring, CV tailoring, application tracker
 6. Productivity: calendar, tasks, reminders
 7. Learning coach

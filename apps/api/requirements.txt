@@ -17,6 +17,10 @@ anthropic~=0.43          # official Claude SDK — used ONLY inside src/llm/clau
 pgvector~=0.3            # SQLAlchemy support for the pgvector column type
 fastembed~=0.5           # local CPU embeddings — free, private, no extra API key
 
+# Auth + email (Phase 4)
+pyjwt~=2.10              # signs/verifies login tokens (JWT)
+email-validator~=2.2     # lets Pydantic validate EmailStr fields
+
 # Development / testing
 pytest~=8.3
 pytest-asyncio~=0.25     # lets tests await async code

@@ -31,6 +31,20 @@ class Settings(BaseSettings):
     # LLM keys are optional in Phase 0; Phase 1 will require anthropic_api_key.
     anthropic_api_key: str = ""
 
+    # --- Auth (Phase 4) ---
+    # If aria_password is empty, auth is DISABLED (local dev mode).
+    # Set both in .env to require login.
+    aria_password: str = ""
+    secret_key: str = "dev-only-secret-change-me"  # signs JWTs; override in .env
+
+    # --- Outgoing email via SMTP (Phase 4) ---
+    # For Gmail: smtp.gmail.com / 587 / your address / an App Password
+    # (Google account -> Security -> 2-Step Verification -> App passwords).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
 
