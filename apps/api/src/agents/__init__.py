@@ -37,5 +37,5 @@ def get_agent(name: str) -> AgentInfo | None:
 
 
 # Import agent modules so their registrations run at startup.
-from src.agents import communication, demo  # noqa: E402,F401
+from src.agents import communication, demo, jobsearch  # noqa: E402,F401
 from src.integrations import email  # noqa: E402,F401  (registers email.send executor)

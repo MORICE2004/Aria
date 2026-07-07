@@ -116,6 +116,41 @@ class MemoryChunk(Base):
     item: Mapped[MemoryItem] = relationship(back_populates="chunks")
 
 
+class JobApplication(Base):
+    """One job opportunity being tracked, from 'saved' to an outcome.
+
+    Status flow (any order, user-driven):
+      saved -> applied -> interview -> offer | rejected
+    """
+
+    __tablename__ = "job_applications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    company: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(200))
+    url: Mapped[str] = mapped_column(String(1000), default="")
+    description: Mapped[str] = mapped_column(Text, default="")  # the job posting
+    status: Mapped[str] = mapped_column(String(20), default="saved", index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")        # MORICE's own notes
+    match_score: Mapped[int | None] = mapped_column(nullable=True)  # 0-100, from analysis
+    match_notes: Mapped[str] = mapped_column(Text, default="")  # strengths/gaps summary
+    cover_letter: Mapped[str] = mapped_column(Text, default="") # latest draft
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class RecruiterContact(Base):
+    """A recruiter or hiring contact worth remembering."""
+
+    __tablename__ = "recruiter_contacts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    name: Mapped[str] = mapped_column(String(200))
+    company: Mapped[str] = mapped_column(String(200), default="")
+    email: Mapped[str] = mapped_column(String(320), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ActionRequest(Base):
     """A sensitive action an agent WANTS to perform — pending human approval.
 

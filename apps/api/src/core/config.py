@@ -28,8 +28,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://aria:aria_dev_password@localhost:5432/aria"
     redis_url: str = "redis://localhost:6379/0"
 
-    # LLM keys are optional in Phase 0; Phase 1 will require anthropic_api_key.
+    # --- LLM provider selection (Phase 5) ---
+    # "claude" (default) or "openai" — set the matching API key below.
+    llm_provider: str = "claude"
     anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    openai_model: str = "gpt-5.1"
 
     # --- Auth (Phase 4) ---
     # If aria_password is empty, auth is DISABLED (local dev mode).

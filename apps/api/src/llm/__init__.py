@@ -16,7 +16,18 @@ from src.llm.claude import ClaudeProvider
 
 @lru_cache
 def _cached_provider() -> LLMProvider:
-    return ClaudeProvider(api_key=get_settings().anthropic_api_key)
+    settings = get_settings()
+    if settings.llm_provider == "openai":
+        from src.llm.openai import OpenAIProvider
+
+        return OpenAIProvider(
+            api_key=settings.openai_api_key, model=settings.openai_model
+        )
+    if settings.llm_provider == "claude":
+        return ClaudeProvider(api_key=settings.anthropic_api_key)
+    raise ValueError(
+        f"Unknown LLM_PROVIDER {settings.llm_provider!r} — use 'claude' or 'openai'."
+    )
 
 
 def get_llm_provider() -> LLMProvider:

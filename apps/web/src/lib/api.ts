@@ -52,7 +52,47 @@ export type ActionRequest = {
 };
 export type AuditEvent = { event: string; detail: string; created_at: string };
 
+export type Job = {
+  id: string;
+  company: string;
+  role: string;
+  url: string;
+  description: string;
+  status: "saved" | "applied" | "interview" | "offer" | "rejected";
+  notes: string;
+  match_score: number | null;
+  match_notes: string;
+  cover_letter: string;
+};
+export type Recruiter = {
+  id: string;
+  name: string;
+  company: string;
+  email: string;
+  notes: string;
+};
+
 export const api = {
+  listJobs: () => request<Job[]>("/jobs"),
+  addJob: (j: Pick<Job, "company" | "role" | "url" | "description">) =>
+    request<Job>("/jobs", { method: "POST", body: JSON.stringify(j) }),
+  updateJob: (id: string, patch: Partial<Pick<Job, "status" | "notes" | "description">>) =>
+    request<Job>(`/jobs/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteJob: (id: string) => request<void>(`/jobs/${id}`, { method: "DELETE" }),
+  analyzeJob: (id: string) => request<Job>(`/jobs/${id}/analyze`, { method: "POST" }),
+  draftCoverLetter: (id: string, extra = "") =>
+    request<Job>(`/jobs/${id}/cover-letter`, {
+      method: "POST",
+      body: JSON.stringify({ extra }),
+    }),
+  interviewPrep: (id: string) =>
+    request<{ text: string }>(`/jobs/${id}/interview-prep`, { method: "POST" }),
+  listRecruiters: () => request<Recruiter[]>("/recruiters"),
+  addRecruiter: (r: { name: string; company: string; email: string | null; notes: string }) =>
+    request<Recruiter>("/recruiters", { method: "POST", body: JSON.stringify(r) }),
+  deleteRecruiter: (id: string) =>
+    request<void>(`/recruiters/${id}`, { method: "DELETE" }),
+
   authStatus: () => request<{ auth_enabled: boolean }>("/auth/status"),
   login: (password: string) =>
     request<{ token: string }>("/auth/login", {

@@ -31,7 +31,7 @@ other code path from agent to outside world.
 | Python/FastAPI over NestJS | The AI ecosystem (LangGraph, embeddings, doc parsing, local models) is Python-first; FastAPI validates inputs at the boundary and auto-generates docs. |
 | pgvector over a dedicated vector DB | One less service to run, secure, and pay for; ample at personal scale. |
 | LLM provider abstraction | Swap Claude/OpenAI/local models by writing one adapter, not touching agents. |
-| LangGraph for agents | First-class human-in-the-loop interrupts = our safety rule as a framework primitive. |
+| Plain async pipelines for agents (LangGraph dropped) | All agents are straight call sequences; our human-in-the-loop lives in the Action Gateway, not a framework. Revisit if an agent ever needs branching/stateful workflows (see docs/phase-5.md). |
 | Docker Compose | Identical infra on any machine with one command. |
 | WhatsApp/Instagram = paste-in drafting only | No official personal APIs; unofficial ones risk account bans. |
 
@@ -51,7 +51,7 @@ other code path from agent to outside world.
 2. Memory & RAG: pgvector, local embeddings, memory viewer, RAG-augmented chat ✅
 3. Agent registry + **Action Gateway** + audit log + approvals UI ✅ (LangGraph + auth move to Phase 4, next to their first real use)
 4. Communication agent: paste-in drafting, SMTP email via gateway, JWT auth ✅ (OAuth later; swap inside the email.send executor)
-5. Job search agent: matching, scoring, CV tailoring, application tracker
+5. Job search agent: fit scoring, cover letters, interview prep, tracker + recruiters; OpenAI as second provider ✅
 6. Productivity: calendar, tasks, reminders
 7. Learning coach
 8. Expansion: voice, local LLMs, finance/research agents
