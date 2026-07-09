@@ -28,12 +28,15 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://aria:aria_dev_password@localhost:5432/aria"
     redis_url: str = "redis://localhost:6379/0"
 
-    # --- LLM provider selection (Phase 5) ---
-    # "claude" (default) or "openai" — set the matching API key below.
+    # --- LLM provider selection ---
+    # "claude" (default), "openai", or "gemini" — set the matching key below.
+    # Gemini has a free tier: get a key at aistudio.google.com.
     llm_provider: str = "claude"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     openai_model: str = "gpt-5.1"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
 
     # --- Auth (Phase 4) ---
     # If aria_password is empty, auth is DISABLED (local dev mode).

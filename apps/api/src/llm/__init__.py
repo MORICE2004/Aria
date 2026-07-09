@@ -23,10 +23,17 @@ def _cached_provider() -> LLMProvider:
         return OpenAIProvider(
             api_key=settings.openai_api_key, model=settings.openai_model
         )
+    if settings.llm_provider == "gemini":
+        from src.llm.gemini import GeminiProvider
+
+        return GeminiProvider(
+            api_key=settings.gemini_api_key, model=settings.gemini_model
+        )
     if settings.llm_provider == "claude":
         return ClaudeProvider(api_key=settings.anthropic_api_key)
     raise ValueError(
-        f"Unknown LLM_PROVIDER {settings.llm_provider!r} — use 'claude' or 'openai'."
+        f"Unknown LLM_PROVIDER {settings.llm_provider!r} — "
+        "use 'claude', 'openai', or 'gemini'."
     )
 
 

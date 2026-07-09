@@ -13,6 +13,7 @@ greenlet~=3.1            # required by SQLAlchemy's async mode
 # LLM (Phase 1)
 anthropic~=0.43          # official Claude SDK — used ONLY inside src/llm/claude.py
 openai>=1.60,<3          # official OpenAI SDK — used ONLY inside src/llm/openai.py
+google-genai~=1.2        # official Gemini SDK — used ONLY inside src/llm/gemini.py
 
 # Memory / RAG (Phase 2)
 pgvector~=0.3            # SQLAlchemy support for the pgvector column type
