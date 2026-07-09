@@ -23,6 +23,7 @@ from src.routers import (
     communication,
     health,
     jobs,
+    learning,
     memory,
     tasks,
 )
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(communication.router, dependencies=protected)
     app.include_router(jobs.router, dependencies=protected)
     app.include_router(tasks.router, dependencies=protected)
+    app.include_router(learning.router, dependencies=protected)
 
     logger.info("ARIA API started (env=%s)", settings.app_env)
     return app

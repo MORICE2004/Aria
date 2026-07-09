@@ -53,7 +53,7 @@ other code path from agent to outside world.
 4. Communication agent: paste-in drafting, SMTP email via gateway, JWT auth ✅ (OAuth later; swap inside the email.send executor)
 5. Job search agent: fit scoring, cover letters, interview prep, tracker + recruiters; OpenAI as second provider ✅
 6. Productivity: tasks, reminders, deadlines, interviews ✅ (Google Calendar OAuth later)
-7. Learning coach
+7. Learning coach: progress-aware explain / code review / learning paths ✅
 8. Expansion: voice, local LLMs, finance/research agents
 
 Gate between phases: it runs, tests pass, and `docs/phase-N.md` exists.

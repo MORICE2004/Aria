@@ -167,6 +167,22 @@ class Task(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class LearningTopic(Base):
+    """One thing MORICE is learning, with self-assessed progress.
+
+    Status flow: learning -> comfortable -> mastered (user-driven, any order).
+    The learning coach reads this list to pitch explanations at the right level.
+    """
+
+    __tablename__ = "learning_topics"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    name: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(20), default="learning", index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ActionRequest(Base):
     """A sensitive action an agent WANTS to perform — pending human approval.
 

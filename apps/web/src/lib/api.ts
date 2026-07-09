@@ -82,7 +82,43 @@ export type Task = {
   job_id: string | null;
 };
 
+export type LearningTopic = {
+  id: string;
+  name: string;
+  status: "learning" | "comfortable" | "mastered";
+  notes: string;
+};
+
 export const api = {
+  listTopics: () => request<LearningTopic[]>("/learning/topics"),
+  addTopic: (name: string) =>
+    request<LearningTopic>("/learning/topics", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    }),
+  updateTopic: (id: string, status: LearningTopic["status"]) =>
+    request<LearningTopic>(`/learning/topics/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  deleteTopic: (id: string) =>
+    request<void>(`/learning/topics/${id}`, { method: "DELETE" }),
+  explain: (concept: string, context: string) =>
+    request<{ text: string }>("/learning/explain", {
+      method: "POST",
+      body: JSON.stringify({ concept, context }),
+    }),
+  reviewCode: (code: string, question: string) =>
+    request<{ text: string }>("/learning/review", {
+      method: "POST",
+      body: JSON.stringify({ code, question }),
+    }),
+  learningPath: (goal: string) =>
+    request<{ text: string }>("/learning/path", {
+      method: "POST",
+      body: JSON.stringify({ goal }),
+    }),
+
   listTasks: (status?: string) =>
     request<Task[]>(`/tasks${status ? `?status=${status}` : ""}`),
   addTask: (t: { title: string; kind: string; due_at: string | null; notes?: string }) =>
