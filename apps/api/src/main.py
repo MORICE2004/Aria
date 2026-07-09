@@ -16,7 +16,16 @@ from src.core.config import get_settings
 from src.core.logging import configure_logging
 from src.core.security import require_auth
 from src.db import init_db
-from src.routers import actions, auth, chat, communication, health, jobs, memory
+from src.routers import (
+    actions,
+    auth,
+    chat,
+    communication,
+    health,
+    jobs,
+    memory,
+    tasks,
+)
 
 
 @asynccontextmanager
@@ -66,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(actions.router, dependencies=protected)
     app.include_router(communication.router, dependencies=protected)
     app.include_router(jobs.router, dependencies=protected)
+    app.include_router(tasks.router, dependencies=protected)
 
     logger.info("ARIA API started (env=%s)", settings.app_env)
     return app

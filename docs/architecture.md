@@ -52,7 +52,7 @@ other code path from agent to outside world.
 3. Agent registry + **Action Gateway** + audit log + approvals UI ✅ (LangGraph + auth move to Phase 4, next to their first real use)
 4. Communication agent: paste-in drafting, SMTP email via gateway, JWT auth ✅ (OAuth later; swap inside the email.send executor)
 5. Job search agent: fit scoring, cover letters, interview prep, tracker + recruiters; OpenAI as second provider ✅
-6. Productivity: calendar, tasks, reminders
+6. Productivity: tasks, reminders, deadlines, interviews ✅ (Google Calendar OAuth later)
 7. Learning coach
 8. Expansion: voice, local LLMs, finance/research agents
 

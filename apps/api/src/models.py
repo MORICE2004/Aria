@@ -151,6 +151,22 @@ class RecruiterContact(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class Task(Base):
+    """A task, reminder, or deadline. `due_at` optional; `job_id` optionally
+    links it to a tracked application (e.g. an interview date)."""
+
+    __tablename__ = "tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    title: Mapped[str] = mapped_column(String(300))
+    notes: Mapped[str] = mapped_column(Text, default="")
+    kind: Mapped[str] = mapped_column(String(20), default="task")  # task|reminder|deadline|interview
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open|done
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    job_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ActionRequest(Base):
     """A sensitive action an agent WANTS to perform — pending human approval.
 

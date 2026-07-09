@@ -72,7 +72,25 @@ export type Recruiter = {
   notes: string;
 };
 
+export type Task = {
+  id: string;
+  title: string;
+  notes: string;
+  kind: "task" | "reminder" | "deadline" | "interview";
+  status: "open" | "done";
+  due_at: string | null;
+  job_id: string | null;
+};
+
 export const api = {
+  listTasks: (status?: string) =>
+    request<Task[]>(`/tasks${status ? `?status=${status}` : ""}`),
+  addTask: (t: { title: string; kind: string; due_at: string | null; notes?: string }) =>
+    request<Task>("/tasks", { method: "POST", body: JSON.stringify(t) }),
+  updateTask: (id: string, patch: Partial<Pick<Task, "status" | "title" | "notes">>) =>
+    request<Task>(`/tasks/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: "DELETE" }),
+
   listJobs: () => request<Job[]>("/jobs"),
   addJob: (j: Pick<Job, "company" | "role" | "url" | "description">) =>
     request<Job>("/jobs", { method: "POST", body: JSON.stringify(j) }),
