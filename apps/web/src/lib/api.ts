@@ -99,7 +99,20 @@ export type LearningTopic = {
   notes: string;
 };
 
+export type Notifications = {
+  pending_approvals: number;
+  due_tasks: { id: string; title: string; due_at: string | null; overdue: boolean }[];
+  unread_emails: { sender: string; subject: string; snippet: string }[] | null;
+  email_error: string | null;
+};
+
 export const api = {
+  getNotifications: () => request<Notifications>("/notifications"),
+  readInbox: () =>
+    request<{ sender: string; subject: string; date: string; snippet: string }[]>(
+      "/communication/inbox",
+    ),
+
   listTopics: () => request<LearningTopic[]>("/learning/topics"),
   addTopic: (name: string) =>
     request<LearningTopic>("/learning/topics", {

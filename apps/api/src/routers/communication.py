@@ -63,6 +63,32 @@ async def summarize(
     return TextOut(text=await agent.summarize(llm, conversation=body.conversation))
 
 
+class InboxMessageOut(BaseModel):
+    sender: str
+    subject: str
+    date: str
+    snippet: str
+
+
+@router.get("/inbox", response_model=list[InboxMessageOut])
+async def read_inbox():
+    """Recent unread emails (read-only — never marks anything as read)."""
+    from fastapi import HTTPException
+
+    from src.integrations import inbox
+
+    try:
+        messages = await inbox.fetch_unread(limit=10)
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    return [
+        InboxMessageOut(
+            sender=m.sender, subject=m.subject, date=m.date, snippet=m.snippet
+        )
+        for m in messages
+    ]
+
+
 @router.post("/email-request", response_model=ActionOut, status_code=201)
 async def request_email_send(
     body: EmailRequestIn, session: AsyncSession = Depends(get_session)

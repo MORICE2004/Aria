@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
 
+    # --- Incoming email via IMAP (read-only inbox) ---
+    # Gmail: imap.gmail.com, same address + App Password as SMTP.
+    imap_host: str = ""
+    imap_port: int = 993
+
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
 

@@ -6,6 +6,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import { NotificationBell } from "@/components/notification-bell";
 import { Sidebar } from "@/components/sidebar";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -31,6 +32,7 @@ export default function RootLayout({
           <Sidebar />
           <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
         </div>
+        <NotificationBell />
       </body>
     </html>
   );

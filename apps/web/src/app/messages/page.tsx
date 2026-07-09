@@ -9,7 +9,7 @@
  */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 const PLATFORMS = ["whatsapp", "instagram", "linkedin", "email"] as const;
@@ -26,6 +26,27 @@ export default function MessagesPage() {
   const [emailTo, setEmailTo] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [queued, setQueued] = useState(false);
+
+  // Hand-off from the notification bell: "Draft a reply" to an email
+  // pre-fills the platform and conversation.
+  useEffect(() => {
+    // Deferred (not synchronous in the effect) to keep React render cascades clean.
+    const timer = setTimeout(() => {
+      const raw = sessionStorage.getItem("aria_prefill");
+      if (!raw) return;
+      sessionStorage.removeItem("aria_prefill");
+      try {
+        const prefill = JSON.parse(raw) as { platform: string; conversation: string };
+        if (PLATFORMS.includes(prefill.platform as (typeof PLATFORMS)[number])) {
+          setPlatform(prefill.platform as (typeof PLATFORMS)[number]);
+        }
+        setConversation(prefill.conversation);
+      } catch {
+        /* malformed prefill — ignore */
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
 
   async function run(kind: "draft" | "summary") {
     if (!conversation.trim()) return;
