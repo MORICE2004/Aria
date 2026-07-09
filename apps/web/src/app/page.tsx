@@ -1,23 +1,40 @@
 /**
- * Home page — system status.
+ * Home — ARIA's command center.
  *
- * Phase 0's job is proving the full pipeline works: this page calls the
- * FastAPI backend's /health endpoint from the browser and shows the result.
- * If the API is down (or not started), it says so honestly instead of erroring.
+ * Greeting, system status (live /health check), and stat tiles pulled from
+ * the real APIs: pending approvals, open tasks, tracked jobs, memories.
+ * Everything links into its section.
  */
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+import { api } from "@/lib/api";
+import { API_URL } from "@/lib/api";
 
 type ApiStatus =
   | { state: "loading" }
   | { state: "ok"; env: string; version: string }
   | { state: "down"; error: string };
 
+type Stats = {
+  pendingApprovals: number;
+  openTasks: number;
+  jobs: number;
+  memories: number;
+};
+
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return "Working late";
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
 export default function HomePage() {
   const [status, setStatus] = useState<ApiStatus>({ state: "loading" });
+  const [stats, setStats] = useState<Stats | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/health`)
@@ -29,50 +46,107 @@ export default function HomePage() {
         setStatus({ state: "ok", env: body.env, version: body.version }),
       )
       .catch((err: Error) => setStatus({ state: "down", error: err.message }));
+
+    Promise.all([
+      api.listActions("pending"),
+      api.listTasks("open"),
+      api.listJobs(),
+      api.listMemories(),
+    ])
+      .then(([actions, tasks, jobs, memories]) =>
+        setStats({
+          pendingApprovals: actions.length,
+          openTasks: tasks.length,
+          jobs: jobs.length,
+          memories: memories.length,
+        }),
+      )
+      .catch(() => setStats(null));
   }, []);
 
+  const tiles = stats
+    ? ([
+        { label: "Awaiting your approval", value: stats.pendingApprovals, href: "/approvals", hot: stats.pendingApprovals > 0 },
+        { label: "Open tasks", value: stats.openTasks, href: "/tasks", hot: false },
+        { label: "Jobs tracked", value: stats.jobs, href: "/jobs", hot: false },
+        { label: "Memories", value: stats.memories, href: "/memory", hot: false },
+      ] as const)
+    : null;
+
   return (
-    <div className="mx-auto max-w-2xl">
-      <h2 className="mb-2 text-2xl font-semibold">Welcome to ARIA</h2>
-      <p className="mb-8 text-sm text-zinc-400">
-        Your personal AI operating system. Phase 0 verifies the foundation:
-        dashboard, API, and databases all talking to each other.
-      </p>
+    <div className="mx-auto max-w-4xl">
+      {/* Hero */}
+      <section className="mb-8 mt-4 md:mt-10">
+        <p className="mb-1 text-xs uppercase tracking-[0.3em] text-cyan-400/80">
+          {greeting()}, MORICE
+        </p>
+        <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
+          At your service.
+        </h1>
+        <p className="mt-2 max-w-lg text-sm text-zinc-400">
+          I draft, score, remember, and prepare — and nothing leaves this
+          machine as you without your explicit approval.
+        </p>
+      </section>
 
-      <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-        <h3 className="mb-3 text-sm font-medium text-zinc-300">
-          System status
-        </h3>
-
-        {status.state === "loading" && (
-          <p className="text-sm text-zinc-500">Checking API…</p>
-        )}
-
-        {status.state === "ok" && (
-          <div className="flex items-center gap-2 text-sm">
-            <span aria-hidden className="h-2 w-2 rounded-full bg-emerald-500" />
-            <span>
-              API online — version {status.version} ({status.env})
+      {/* System status */}
+      <section className="glass mb-6 flex items-center gap-3 rounded-xl px-5 py-4">
+        {status.state === "ok" ? (
+          <>
+            <span aria-hidden className="reactor h-2.5 w-2.5 rounded-full bg-cyan-400" />
+            <span className="text-sm">
+              All systems online
+              <span className="ml-2 text-xs text-zinc-500">
+                v{status.version} · {status.env}
+              </span>
             </span>
-          </div>
-        )}
-
-        {status.state === "down" && (
-          <div className="text-sm">
-            <div className="flex items-center gap-2">
-              <span aria-hidden className="h-2 w-2 rounded-full bg-red-500" />
-              <span>API unreachable: {status.error}</span>
-            </div>
-            <p className="mt-2 text-zinc-500">
-              Start it with:{" "}
-              <code className="rounded bg-zinc-800 px-1.5 py-0.5">
+            <Link
+              href="/chat"
+              className="ml-auto rounded-lg bg-cyan-500/90 px-4 py-2 text-sm font-medium text-cyan-950 transition-colors hover:bg-cyan-400"
+            >
+              Talk to ARIA
+            </Link>
+          </>
+        ) : status.state === "loading" ? (
+          <span className="text-sm text-zinc-500">Contacting core…</span>
+        ) : (
+          <>
+            <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-red-500" />
+            <span className="text-sm">
+              Core offline — start the API:{" "}
+              <code className="rounded bg-white/5 px-1.5 py-0.5 text-xs">
                 uvicorn src.main:app --reload --port 8000
-              </code>{" "}
-              in <code className="rounded bg-zinc-800 px-1.5 py-0.5">apps/api</code>
-            </p>
-          </div>
+              </code>
+            </span>
+          </>
         )}
       </section>
+
+      {/* Stat tiles */}
+      {tiles && (
+        <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {tiles.map((tile) => (
+            <Link
+              key={tile.href}
+              href={tile.href}
+              className={`glass group rounded-xl p-4 transition-colors hover:border-cyan-400/30 ${
+                tile.hot ? "border-amber-400/40" : ""
+              }`}
+            >
+              <p
+                className={`text-3xl font-semibold tabular-nums ${
+                  tile.hot ? "text-amber-300" : "text-zinc-100"
+                }`}
+              >
+                {tile.value}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500 group-hover:text-zinc-400">
+                {tile.label}
+              </p>
+            </Link>
+          ))}
+        </section>
+      )}
     </div>
   );
 }

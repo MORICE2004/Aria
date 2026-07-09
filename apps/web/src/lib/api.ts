@@ -4,7 +4,17 @@
  * so URLs, error handling, and (later) auth headers live in one place.
  */
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/**
+ * Where the API lives. Defaults to port 8000 on WHATEVER host served this
+ * page — so opening the dashboard from a phone at http://192.168.x.x:3000
+ * automatically talks to the API on the same machine. Override with
+ * NEXT_PUBLIC_API_URL when they're on different hosts.
+ */
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ??
+  (typeof window !== "undefined"
+    ? `http://${window.location.hostname}:8000`
+    : "http://localhost:8000");
 
 export type Conversation = { id: string; title: string };
 export type Message = { id: string; role: "user" | "assistant"; content: string };

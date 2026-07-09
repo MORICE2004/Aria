@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
+/* ── ARIA design tokens ─────────────────────────────────────────────
+   Jarvis-inspired dark-tech language: near-black space background,
+   cyan "arc reactor" accent, glass panels, restrained motion. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #05070d;
+  --foreground: #e6edf3;
+  --accent: #22d3ee; /* cyan-400 — the reactor color */
 }
 
 @theme inline {
@@ -12,15 +16,79 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  /* Ambient depth: two faint radial glows behind everything. */
+  background-image:
+    radial-gradient(600px 400px at 85% -10%, rgba(34, 211, 238, 0.07), transparent 70%),
+    radial-gradient(800px 500px at -10% 110%, rgba(56, 130, 246, 0.05), transparent 70%);
+  background-attachment: fixed;
+}
+
+/* Glass panel — used via className="glass" alongside Tailwind utilities. */
+.glass {
+  background: rgba(15, 20, 32, 0.6);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background: #0d1220; /* solid fallback */
+    backdrop-filter: none;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* The reactor: ARIA's pulsing core indicator. */
+.reactor {
+  box-shadow:
+    0 0 6px rgba(34, 211, 238, 0.9),
+    0 0 18px rgba(34, 211, 238, 0.45),
+    0 0 40px rgba(34, 211, 238, 0.2);
+  animation: reactor-pulse 3s ease-in-out infinite;
+}
+@keyframes reactor-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reactor { animation: none; }
+}
+
+/* Buttons acknowledge the press (feedback, not decoration). */
+button:active {
+  transform: scale(0.97);
+}
+button {
+  transition: transform 120ms ease-out, background-color 150ms ease-out,
+    color 150ms ease-out, border-color 150ms ease-out;
+}
+
+/* Visible, on-brand focus for keyboard users. */
+:focus-visible {
+  outline: 2px solid rgba(34, 211, 238, 0.7);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(34, 211, 238, 0.3);
+}
+
+/* Slim dark scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.25) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }

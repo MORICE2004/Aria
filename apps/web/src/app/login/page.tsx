@@ -29,7 +29,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="mx-auto mt-24 max-w-sm rounded-lg border border-zinc-800 bg-zinc-900 p-6">
+    <div className="mx-auto mt-24 max-w-sm glass rounded-xl p-6">
       <h2 className="mb-4 text-xl font-semibold">Unlock ARIA</h2>
       {enabled === false && (
         <p className="text-sm text-zinc-400">
@@ -55,7 +55,7 @@ export default function LoginPage() {
               {error}
             </p>
           )}
-          <button className="w-full rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+          <button className="w-full rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
             Log in
           </button>
         </form>

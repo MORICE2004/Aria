@@ -85,7 +85,7 @@ export default function ChatPage() {
   return (
     <div className="flex h-[calc(100vh-4rem)] gap-4">
       {/* Conversation list */}
-      <aside className="flex w-64 flex-col rounded-lg border border-zinc-800 bg-zinc-900">
+      <aside className="flex w-64 flex-col glass rounded-xl">
         <div className="p-3">
           <button
             onClick={newConversation}
@@ -101,8 +101,8 @@ export default function ChatPage() {
               onClick={() => setActiveId(c.id)}
               className={`mb-1 w-full truncate rounded-md px-3 py-2 text-left text-sm ${
                 c.id === activeId
-                  ? "bg-zinc-800 text-white"
-                  : "text-zinc-400 hover:bg-zinc-800/60"
+                  ? "bg-white/10 text-white"
+                  : "text-zinc-400 hover:bg-white/5"
               }`}
             >
               {c.title}
@@ -112,7 +112,7 @@ export default function ChatPage() {
       </aside>
 
       {/* Message thread */}
-      <section className="flex flex-1 flex-col rounded-lg border border-zinc-800 bg-zinc-900">
+      <section className="flex flex-1 flex-col glass rounded-xl">
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {messages.length === 0 && (
             <p className="mt-16 text-center text-sm text-zinc-500">
@@ -124,8 +124,8 @@ export default function ChatPage() {
               key={m.id}
               className={`max-w-[80%] whitespace-pre-wrap rounded-lg px-4 py-2 text-sm ${
                 m.role === "user"
-                  ? "ml-auto bg-indigo-600 text-white"
-                  : "bg-zinc-800 text-zinc-100"
+                  ? "ml-auto bg-cyan-600 text-white"
+                  : "bg-white/10 text-zinc-100"
               }`}
             >
               {m.content || <span className="animate-pulse">…</span>}
@@ -145,7 +145,7 @@ export default function ChatPage() {
             e.preventDefault();
             send();
           }}
-          className="flex gap-2 border-t border-zinc-800 p-3"
+          className="flex gap-2 border-t border-white/10 p-3"
         >
           <label htmlFor="chat-input" className="sr-only">
             Message ARIA
@@ -161,7 +161,7 @@ export default function ChatPage() {
           <button
             type="submit"
             disabled={busy || !input.trim()}
-            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
+            className="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-cyan-500 disabled:opacity-40"
           >
             {busy ? "…" : "Send"}
           </button>

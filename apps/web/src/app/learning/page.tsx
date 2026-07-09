@@ -95,7 +95,7 @@ export default function LearningPage() {
         </form>
         <ul className="space-y-2">
           {topics.map((t) => (
-            <li key={t.id} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+            <li key={t.id} className="glass rounded-xl p-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm">{t.name}</span>
                 <button
@@ -113,7 +113,7 @@ export default function LearningPage() {
                     onClick={() => api.updateTopic(t.id, s).then(refresh)}
                     className={`rounded px-1.5 py-0.5 text-[10px] capitalize ${
                       t.status === s
-                        ? `bg-zinc-800 font-semibold ${STATUS_COLOR[s]}`
+                        ? `bg-white/10 font-semibold ${STATUS_COLOR[s]}`
                         : "text-zinc-600 hover:text-zinc-300"
                     }`}
                   >
@@ -145,7 +145,7 @@ export default function LearningPage() {
               }}
               className={`rounded-md px-3 py-1.5 text-sm capitalize ${
                 tool === t
-                  ? "bg-indigo-600 text-white"
+                  ? "bg-cyan-600 text-white"
                   : "border border-zinc-700 text-zinc-400 hover:text-white"
               }`}
             >
@@ -174,7 +174,7 @@ export default function LearningPage() {
         <button
           onClick={run}
           disabled={busy || !inputA.trim()}
-          className="mb-4 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+          className="mb-4 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
         >
           {busy ? "Thinking…" : labels.button}
         </button>
@@ -183,7 +183,7 @@ export default function LearningPage() {
           <p role="alert" className="mb-4 text-sm text-red-400">{error}</p>
         )}
         {output && (
-          <div className="whitespace-pre-wrap rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-sm text-zinc-200">
+          <div className="whitespace-pre-wrap glass rounded-xl p-4 text-sm text-zinc-200">
             {output}
           </div>
         )}

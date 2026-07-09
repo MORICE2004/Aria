@@ -78,7 +78,7 @@ export default function MessagesPage() {
             onClick={() => setPlatform(p)}
             className={`rounded-md px-3 py-1.5 text-sm capitalize ${
               platform === p
-                ? "bg-indigo-600 text-white"
+                ? "bg-cyan-600 text-white"
                 : "border border-zinc-700 text-zinc-400 hover:text-white"
             }`}
           >
@@ -107,7 +107,7 @@ export default function MessagesPage() {
         <button
           onClick={() => run("draft")}
           disabled={busy !== null || !conversation.trim()}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+          className="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
         >
           {busy === "draft" ? "Drafting…" : "Draft reply"}
         </button>
@@ -127,7 +127,7 @@ export default function MessagesPage() {
       )}
 
       {output && (
-        <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+        <section className="glass rounded-xl p-4">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-medium text-zinc-300">Draft</h3>
             <button
@@ -140,7 +140,7 @@ export default function MessagesPage() {
           <p className="whitespace-pre-wrap text-sm text-zinc-100">{output}</p>
 
           {platform === "email" && !queued && (
-            <form onSubmit={queueEmail} className="mt-4 space-y-2 border-t border-zinc-800 pt-3">
+            <form onSubmit={queueEmail} className="mt-4 space-y-2 border-t border-white/10 pt-3">
               <p className="text-xs text-zinc-500">
                 Send as email — goes to the Approvals queue, not directly out.
               </p>

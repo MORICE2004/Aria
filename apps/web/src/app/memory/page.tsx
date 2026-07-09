@@ -83,7 +83,7 @@ export default function MemoryPage() {
       {/* Add a memory */}
       <form
         onSubmit={add}
-        className="mb-6 space-y-2 rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+        className="mb-6 space-y-2 glass rounded-xl p-4"
       >
         <div className="flex gap-2">
           <input
@@ -115,7 +115,7 @@ export default function MemoryPage() {
         <button
           type="submit"
           disabled={busy || !title.trim() || !content.trim()}
-          className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+          className="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
         >
           {busy ? "Saving…" : "Remember this"}
         </button>
@@ -149,12 +149,12 @@ export default function MemoryPage() {
         {(hits ?? items).map((m) => (
           <li
             key={hits ? `${(m as MemoryHit).item_id}-${m.content.slice(0, 16)}` : m.id}
-            className="rounded-lg border border-zinc-800 bg-zinc-900 p-4"
+            className="glass rounded-xl p-4"
           >
             <div className="mb-1 flex items-center justify-between">
               <span className="text-sm font-medium">
                 {m.title}{" "}
-                <span className="ml-2 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
+                <span className="ml-2 rounded bg-white/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">
                   {m.kind}
                 </span>
                 {hits && (

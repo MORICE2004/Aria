@@ -86,7 +86,7 @@ export default function ApprovalsPage() {
       {/* Demo generator — lets you exercise the flow before real agents exist */}
       <form
         onSubmit={createDemo}
-        className="mb-8 flex gap-2 rounded-lg border border-dashed border-zinc-700 bg-zinc-900/50 p-3"
+        className="mb-8 flex gap-2 rounded-lg glass rounded-xl border-dashed p-3"
       >
         <input
           value={demoMessage}
@@ -105,7 +105,7 @@ export default function ApprovalsPage() {
       </h3>
       <ul className="mb-8 space-y-3">
         {pending.map((a) => (
-          <li key={a.id} className="rounded-lg border border-amber-500/30 bg-zinc-900 p-4">
+          <li key={a.id} className="glass rounded-xl border-amber-400/40 p-4">
             <p className="mb-1 text-sm font-medium">{a.summary}</p>
             <p className="mb-3 text-xs text-zinc-500">
               agent: {a.agent} · action: {a.action_type}
@@ -122,7 +122,7 @@ export default function ApprovalsPage() {
               </button>
               <button
                 onClick={() => decide(a.id, false)}
-                className="rounded-md border border-zinc-700 px-4 py-1.5 text-sm text-zinc-300 hover:border-red-500 hover:text-red-400"
+                className="rounded-md border border-zinc-700 px-4 py-1.5 text-sm text-zinc-300 hover:border-red-400/60 hover:text-red-400"
               >
                 Reject
               </button>
@@ -137,7 +137,7 @@ export default function ApprovalsPage() {
       <h3 className="mb-2 text-sm font-medium text-zinc-300">History</h3>
       <ul className="space-y-2">
         {decided.map((a) => (
-          <li key={a.id} className="rounded-lg border border-zinc-800 bg-zinc-900 p-3">
+          <li key={a.id} className="glass rounded-xl p-3">
             <div className="flex items-center justify-between">
               <span className="text-sm">{a.summary}</span>
               <span className={`text-xs font-medium uppercase ${STATUS_COLORS[a.status]}`}>

@@ -1,11 +1,9 @@
 /**
- * Root layout — wraps every page in the app.
- *
- * Provides the persistent dashboard shell: the sidebar on the left and a
- * content area on the right. The `dark` class on <html> enables Tailwind's
- * dark palette everywhere (a light/dark toggle arrives in a later phase).
+ * Root layout — the persistent dashboard shell (sidebar + content).
+ * Theme is dark-only by design: ARIA's visual language is a dark-tech
+ * "ops room" aesthetic (see globals.css for the tokens).
  */
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/sidebar";
@@ -15,6 +13,12 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "ARIA — Personal AI Assistant",
   description: "Your personal AI operating system.",
+  manifest: "/manifest.webmanifest",
+  icons: { icon: "/icon.svg" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#05070d",
 };
 
 export default function RootLayout({
@@ -22,10 +26,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`dark ${geistSans.variable}`}>
-      <body className="min-h-screen bg-zinc-950 font-sans text-zinc-100 antialiased">
+      <body className="min-h-screen font-sans antialiased">
         <div className="flex min-h-screen">
           <Sidebar />
-          <main className="flex-1 p-8">{children}</main>
+          <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
         </div>
       </body>
     </html>

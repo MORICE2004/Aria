@@ -55,11 +55,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS: the browser blocks cross-origin requests unless the API allows them.
-    # Only our own dashboard (localhost:3000 in dev) is allowed — never "*".
+    # CORS: the browser blocks cross-origin requests unless the API allows
+    # them. Allowed: the dashboard on localhost AND on private-network (LAN)
+    # addresses — so the phone can use ARIA over home Wi-Fi. Never "*", and
+    # public origins stay blocked. (If exposing beyond the LAN, set
+    # ARIA_PASSWORD and put a reverse proxy with HTTPS in front.)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],
+        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origin_regex=r"http://(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):3000",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

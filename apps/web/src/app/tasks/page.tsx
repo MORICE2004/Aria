@@ -68,7 +68,7 @@ export default function TasksPage() {
 
   function TaskRow({ task }: { task: Task }) {
     return (
-      <li className="flex items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2.5">
+      <li className="flex items-center gap-3 glass rounded-xl px-4 py-2.5">
         <input
           type="checkbox"
           checked={task.status === "done"}
@@ -78,7 +78,7 @@ export default function TasksPage() {
               .then(refresh)
           }
           aria-label={`Mark "${task.title}" ${task.status === "done" ? "open" : "done"}`}
-          className="h-4 w-4 accent-indigo-600"
+          className="h-4 w-4 accent-cyan-500"
         />
         <span
           className={`flex-1 text-sm ${
@@ -149,7 +149,7 @@ export default function TasksPage() {
           aria-label="Due date"
           className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-2 text-sm"
         />
-        <button className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+        <button className="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
           Add
         </button>
       </form>

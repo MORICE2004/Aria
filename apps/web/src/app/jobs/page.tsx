@@ -95,7 +95,7 @@ export default function JobsPage() {
       )}
 
       {/* Add a job */}
-      <form onSubmit={addJob} className="mb-8 space-y-2 rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+      <form onSubmit={addJob} className="mb-8 space-y-2 glass rounded-xl p-4">
         <div className="flex gap-2">
           <input value={company} onChange={(e) => setCompany(e.target.value)} required
             placeholder="Company" aria-label="Company"
@@ -111,7 +111,7 @@ export default function JobsPage() {
           placeholder="Paste the full job description here (needed for AI analysis)…"
           aria-label="Job description" rows={4}
           className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-zinc-500" />
-        <button className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+        <button className="rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500">
           Track this job
         </button>
       </form>
@@ -119,7 +119,7 @@ export default function JobsPage() {
       {/* Pipeline */}
       <ul className="mb-10 space-y-3">
         {jobs.map((job) => (
-          <li key={job.id} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+          <li key={job.id} className="glass rounded-xl p-4">
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <p className="text-sm font-medium">
@@ -127,7 +127,7 @@ export default function JobsPage() {
                 </p>
                 {job.url && (
                   <a href={job.url} target="_blank" rel="noreferrer"
-                    className="text-xs text-indigo-400 hover:underline">
+                    className="text-xs text-cyan-400 hover:underline">
                     posting ↗
                   </a>
                 )}
@@ -150,10 +150,10 @@ export default function JobsPage() {
             </div>
 
             {openId === job.id && (
-              <div className="mt-4 space-y-4 border-t border-zinc-800 pt-4">
+              <div className="mt-4 space-y-4 border-t border-white/10 pt-4">
                 <div className="flex flex-wrap gap-2">
                   <button onClick={() => ai(job.id, "analyze")} disabled={busyId === job.id}
-                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40">
+                    className="rounded-md bg-cyan-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-cyan-500 disabled:opacity-40">
                     {busyId === job.id ? "Working…" : "Analyze fit"}
                   </button>
                   <button onClick={() => ai(job.id, "cover")} disabled={busyId === job.id}
@@ -215,7 +215,7 @@ export default function JobsPage() {
       </form>
       <ul className="space-y-2">
         {recruiters.map((r) => (
-          <li key={r.id} className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2">
+          <li key={r.id} className="flex items-center justify-between glass rounded-xl px-4 py-2">
             <span className="text-sm">
               {r.name}
               {r.company && <span className="text-zinc-500"> · {r.company}</span>}
