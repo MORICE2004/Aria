@@ -106,7 +106,61 @@ export type Notifications = {
   email_error: string | null;
 };
 
+export type WaAutonomy = {
+  mode: string;
+  emergency_stop: boolean;
+  available_modes: string[];
+};
+export type WaContact = {
+  id: string;
+  name: string;
+  handle: string;
+  trust_level: string;
+  relationship: string;
+  notes: string;
+  effective_mode: string;
+  mode_reason: string;
+};
+export type WaObservation = {
+  contact: WaContact;
+  effective_mode: string;
+  mode_reason: string;
+  intent: string | null;
+  needs_reply: boolean | null;
+  sensitive: string[];
+  urgency: string | null;
+  language: string | null;
+  draft: string | null;
+  sent: boolean;
+};
+export type WaOverview = {
+  mode: string;
+  emergency_stop: boolean;
+  channel_linked: boolean;
+  contacts: (WaContact & { message_count: number })[];
+};
+
 export const api = {
+  waOverview: () => request<WaOverview>("/whatsapp/overview"),
+  waAutonomy: () => request<WaAutonomy>("/whatsapp/autonomy"),
+  waSetAutonomy: (patch: { mode?: string; emergency_stop?: boolean }) =>
+    request<WaAutonomy>("/whatsapp/autonomy", {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  waEmergencyStop: () =>
+    request<WaAutonomy>("/whatsapp/emergency-stop", { method: "POST" }),
+  waSetTrust: (contactId: string, trust_level: string) =>
+    request<WaContact>(`/whatsapp/contacts/${contactId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ trust_level }),
+    }),
+  waSimulate: (handle: string, name: string, body: string) =>
+    request<WaObservation>("/whatsapp/simulate", {
+      method: "POST",
+      body: JSON.stringify({ handle, name, body }),
+    }),
+
   getNotifications: () => request<Notifications>("/notifications"),
   readInbox: () =>
     request<{ sender: string; subject: string; date: string; snippet: string }[]>(

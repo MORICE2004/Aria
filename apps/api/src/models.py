@@ -183,6 +183,64 @@ class LearningTopic(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class Contact(Base):
+    """Someone MORICE communicates with.
+
+    `trust_level` caps what ARIA may ever do for this person, independently of
+    the global autonomy mode. The effective permission is always the MORE
+    RESTRICTIVE of the two — see src/whatsapp/autonomy.py.
+    """
+
+    __tablename__ = "contacts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    name: Mapped[str] = mapped_column(String(200))
+    # Channel handle (e.g. WhatsApp JID or phone). Unique per channel.
+    handle: Mapped[str] = mapped_column(String(120), index=True)
+    channel: Mapped[str] = mapped_column(String(30), default="whatsapp")
+    # unknown | low | trusted | high | never_autonomous
+    trust_level: Mapped[str] = mapped_column(String(20), default="unknown")
+    # friend | colleague | boss | client | recruiter | family | academic | unknown
+    relationship: Mapped[str] = mapped_column(String(30), default="unknown")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class WhatsAppMessage(Base):
+    """One observed message. ARIA stores these to learn; it never implies consent
+    to reply — replying is gated by autonomy mode + trust level."""
+
+    __tablename__ = "whatsapp_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    contact_id: Mapped[str] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"), index=True
+    )
+    # "in" = from the contact, "out" = sent by MORICE (used for style learning)
+    direction: Mapped[str] = mapped_column(String(3))
+    body: Mapped[str] = mapped_column(Text)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    # True when this message came from the simulator rather than real WhatsApp.
+    simulated: Mapped[bool] = mapped_column(default=False)
+
+
+class AutonomyState(Base):
+    """Singleton row holding ARIA's global autonomy mode and the kill switch.
+
+    Exactly one row, id="singleton". Kept in the database (not memory) so the
+    emergency stop survives a restart — a kill switch that forgets is not a
+    kill switch.
+    """
+
+    __tablename__ = "autonomy_state"
+
+    id: Mapped[str] = mapped_column(String(20), primary_key=True, default="singleton")
+    # observe | suggest | supervised | trusted | autonomous
+    mode: Mapped[str] = mapped_column(String(20), default="observe")
+    emergency_stop: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class ActionRequest(Base):
     """A sensitive action an agent WANTS to perform — pending human approval.
 

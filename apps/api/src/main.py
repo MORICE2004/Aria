@@ -27,6 +27,7 @@ from src.routers import (
     memory,
     notifications,
     tasks,
+    whatsapp,
 )
 
 
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(tasks.router, dependencies=protected)
     app.include_router(learning.router, dependencies=protected)
     app.include_router(notifications.router, dependencies=protected)
+    app.include_router(whatsapp.router, dependencies=protected)
 
     logger.info("ARIA API started (env=%s)", settings.app_env)
     return app

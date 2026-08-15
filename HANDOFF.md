@@ -115,6 +115,21 @@ New setting: `CONVERSE_LOCAL` (default true). Set false to send chat and
 drafting to the cloud model instead — the one routing choice with a real
 quality-vs-privacy tradeoff.
 
+## Phase 8 — WhatsApp observe mode COMPLETE (2026-08-16)
+
+Built: contacts + trust levels, autonomy modes, emergency stop (DB-backed,
+survives restart), message store, local classifier, conversation simulator,
+and the `/whatsapp` control centre.
+
+**ARIA cannot send.** No send path exists in the WhatsApp module.
+
+Verified live: injection attempt left trust `unknown`/mode `observe`;
+emergency stop forced observe and returned 409 on escalation; the stop
+survived an API restart; local classifier correctly flagged a Kiswahili money
+request as `financial` + `high` urgency. **76 tests passing** (19 new).
+
+Phase 7 (real account link) is still outstanding — see "Blocked on MORICE".
+
 ## Next steps (in priority order)
 
 1. **Cost/usage persistence** — `model_usage` table, surfaced on a Costs page.
