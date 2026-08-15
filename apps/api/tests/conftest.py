@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
 from src.db import Base, get_session
-from src.llm import get_llm_provider
+from src.llm import get_llm_provider, get_router
 from src.llm.base import ChatMessage, LLMProvider
 from src.main import create_app
 from src.memory import get_memory_service
@@ -33,6 +33,15 @@ class FakeLLM(LLMProvider):
     ) -> AsyncIterator[str]:
         yield "Echo: "
         yield messages[-1].content
+
+
+class FakeRouter:
+    """Stand-in for ModelRouter: every task class resolves to FakeLLM."""
+
+    def resolve(self, task):
+        from src.llm.router import Routed, Tier
+
+        return Routed(provider=FakeLLM(), tier=Tier.LOCAL_FAST, model="fake-model")
 
 
 class FakeEmbedder(EmbeddingProvider):
@@ -69,6 +78,9 @@ def client() -> TestClient:
     app = create_app()
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_llm_provider] = lambda: FakeLLM()
+    # The model router must also be faked, or task-routed endpoints would
+    # reach real Ollama/cloud providers during tests.
+    app.dependency_overrides[get_router] = lambda: FakeRouter()
     app.dependency_overrides[get_memory_service] = lambda: MemoryService(
         embedder=FakeEmbedder()
     )

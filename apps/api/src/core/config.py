@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
 
+    # --- Local models via Ollama (ARIA 2.0 model router) ---
+    # Empty model name = that local tier is disabled.
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_fast_model: str = "llama3.2:3b"      # routine work: classify, extract, summarise
+    ollama_reasoning_model: str = ""            # optional bigger local model
+    # When true, prefer local models even for REASON-class tasks (free + private,
+    # at some quality cost). When false, REASON prefers cloud.
+    prefer_local: bool = False
+
     # --- Auth (Phase 4) ---
     # If aria_password is empty, auth is DISABLED (local dev mode).
     # Set both in .env to require login.

@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents import communication as agent
 from src.db import get_session
 from src.gateway import gateway
-from src.llm import get_llm_provider
+from src.llm import get_llm_provider, get_router
 from src.llm.base import LLMProvider
+from src.llm.router import TaskClass
 from src.memory import get_memory_service
 from src.memory.service import MemoryService
 from src.routers.actions import ActionOut
@@ -56,11 +57,24 @@ async def draft(
     return TextOut(text=text)
 
 
-@router.post("/summarize", response_model=TextOut)
+class SummaryOut(BaseModel):
+    text: str
+    # Action explanation, not chain-of-thought: tells MORICE where his data went.
+    ran_on: str
+
+
+@router.post("/summarize", response_model=SummaryOut)
 async def summarize(
-    body: SummarizeIn, llm: LLMProvider = Depends(get_llm_provider)
-) -> TextOut:
-    return TextOut(text=await agent.summarize(llm, conversation=body.conversation))
+    body: SummarizeIn, model_router=Depends(get_router)
+) -> SummaryOut:
+    """Summarise a conversation.
+
+    Routed as ROUTINE work: summarisation runs on a local model when one is
+    available — free, and the conversation never leaves the machine.
+    """
+    routed = model_router.resolve(TaskClass.ROUTINE)
+    text = await agent.summarize(routed.provider, conversation=body.conversation)
+    return SummaryOut(text=text, ran_on=routed.description)
 
 
 class InboxMessageOut(BaseModel):
