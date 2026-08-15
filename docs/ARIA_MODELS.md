@@ -69,13 +69,38 @@ key**: chat, drafting, classification and summarisation all run locally.
 `get_llm_provider()` also falls back to Ollama when no cloud key is present,
 so a lapsed API key degrades ARIA rather than breaking it.
 
+## Where every endpoint routes (all migrated 2026-08-16)
+
+| Endpoint | TaskClass | Runs on | Why |
+|---|---|---|---|
+| `POST /conversations/{id}/messages` | CONVERSE | local | Everyday chat — free, and conversation stays on the machine |
+| `/communication/draft` | CONVERSE | local | Low-risk drafting; the conversation being replied to never leaves |
+| `/communication/summarize` | ROUTINE | local | Summarisation is cheap, high-volume work |
+| `/jobs/{id}/analyze` | REASON | cloud | Must emit valid JSON and sound judgement |
+| `/jobs/{id}/cover-letter` | REASON | cloud | High-stakes writing |
+| `/jobs/{id}/interview-prep` | REASON | cloud | Analysis |
+| `/learning/explain` | REASON | cloud | A wrong explanation to a beginner is worse than none |
+| `/learning/review` | REASON | cloud | Code review |
+| `/learning/path` | REASON | cloud | Planning |
+
+**`get_llm_provider()` has been removed.** It became dead code once every
+endpoint moved to the router, and its fallback logic is now the router's tier
+ordering. All model access goes through `get_router()` — a single choke point,
+which is also why faking one dependency isolates the whole test suite.
+
+Verified live (server logs, 2026-08-16):
+
+```
+chat              -> Ollama call (llama3.2:3b): 113 in, 9 out
+learning/explain  -> Gemini call: 108 in, 787 out
+jobs/analyze      -> Gemini call: 244 in, 219 out   (returned score 20 + notes)
+```
+
 ## Not yet done
 
 - **Cost/usage persistence.** Token counts are logged per call by every
   adapter but not stored or aggregated — ARIA cannot yet answer "what have I
   spent?". Requires a `model_usage` table and surfacing usage out of the
   streaming interface.
-- **Existing agents still use `get_llm_provider()`**, not the router. They
-  therefore always use the configured cloud provider. Migrating each agent to
-  declare its TaskClass is the next step (e.g. summarise → ROUTINE,
-  job fit scoring → REASON).
+- **`ran_on` is only surfaced by `/communication/summarize`.** Other endpoints
+  route correctly but don't yet tell the UI where they ran.

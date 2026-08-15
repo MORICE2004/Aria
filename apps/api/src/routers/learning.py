@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents import learning
 from src.db import get_session
-from src.llm import get_llm_provider
-from src.llm.base import LLMProvider
+from src.llm import get_router
+from src.llm.router import TaskClass
 from src.models import LearningTopic
 
 router = APIRouter(prefix="/learning", tags=["learning"])
@@ -103,10 +103,13 @@ async def delete_topic(topic_id: str, session: AsyncSession = Depends(get_sessio
 async def explain(
     body: ExplainIn,
     session: AsyncSession = Depends(get_session),
-    llm: LLMProvider = Depends(get_llm_provider),
+    model_router=Depends(get_router),
 ):
+    # Teaching a beginner correctly is high-value: a wrong explanation is
+    # worse than none, so this is REASON-class work.
+    routed = model_router.resolve(TaskClass.REASON)
     text = await learning.explain(
-        llm, session, concept=body.concept, context=body.context
+        routed.provider, session, concept=body.concept, context=body.context
     )
     return TextOut(text=text)
 
@@ -115,10 +118,11 @@ async def explain(
 async def review(
     body: ReviewIn,
     session: AsyncSession = Depends(get_session),
-    llm: LLMProvider = Depends(get_llm_provider),
+    model_router=Depends(get_router),
 ):
+    routed = model_router.resolve(TaskClass.REASON)
     text = await learning.review_code(
-        llm, session, code=body.code, question=body.question
+        routed.provider, session, code=body.code, question=body.question
     )
     return TextOut(text=text)
 
@@ -127,6 +131,9 @@ async def review(
 async def path(
     body: PathIn,
     session: AsyncSession = Depends(get_session),
-    llm: LLMProvider = Depends(get_llm_provider),
+    model_router=Depends(get_router),
 ):
-    return TextOut(text=await learning.learning_path(llm, session, goal=body.goal))
+    routed = model_router.resolve(TaskClass.REASON)
+    return TextOut(
+        text=await learning.learning_path(routed.provider, session, goal=body.goal)
+    )

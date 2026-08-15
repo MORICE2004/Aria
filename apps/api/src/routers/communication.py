@@ -7,8 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents import communication as agent
 from src.db import get_session
 from src.gateway import gateway
-from src.llm import get_llm_provider, get_router
-from src.llm.base import LLMProvider
+from src.llm import get_router
 from src.llm.router import TaskClass
 from src.memory import get_memory_service
 from src.memory.service import MemoryService
@@ -43,11 +42,14 @@ class EmailRequestIn(BaseModel):
 async def draft(
     body: DraftIn,
     session: AsyncSession = Depends(get_session),
-    llm: LLMProvider = Depends(get_llm_provider),
+    model_router=Depends(get_router),
     memory: MemoryService = Depends(get_memory_service),
 ) -> TextOut:
+    # Drafting a reply is CONVERSE-class: local by default, keeping the
+    # conversation being replied to on this machine.
+    routed = model_router.resolve(TaskClass.CONVERSE)
     text = await agent.draft_reply(
-        llm,
+        routed.provider,
         memory,
         session,
         platform=body.platform,

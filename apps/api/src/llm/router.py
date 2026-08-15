@@ -98,6 +98,9 @@ class ModelRouter:
 
     def _preference_order(self, task: TaskClass) -> tuple[Tier, ...]:
         order = _ROUTING[task]
+        if task is TaskClass.CONVERSE and not self._settings.converse_local:
+            # User prefers cloud quality for conversation over local privacy.
+            order = (Tier.CLOUD, Tier.LOCAL_FAST)
         if self._settings.prefer_local:
             # Push local tiers ahead of cloud without losing relative order.
             local = tuple(t for t in order if t is not Tier.CLOUD)

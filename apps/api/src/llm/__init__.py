@@ -1,19 +1,19 @@
 """LLM provider package.
 
-Two ways to get a model, both vendor-agnostic:
+One way to get a model, and it is vendor-agnostic:
 
-  get_llm_provider()      — the configured default provider (legacy path,
-                            used by routers that don't care about task class).
-  get_router().resolve(t) — task-aware routing: local for routine work,
-                            cloud for reasoning, with automatic fallback.
+    routed = get_router().resolve(TaskClass.ROUTINE)
+    async for chunk in routed.provider.stream_chat(messages, system=...): ...
 
-Adding a vendor is still one adapter file plus a branch in
-`build_cloud_provider`. Nothing else in the codebase imports a vendor SDK.
+Callers declare WHAT KIND of work they need (see src/llm/router.py); the
+router decides whether that runs locally or in the cloud, and falls back
+automatically when a tier is unavailable.
+
+Adding a vendor is one adapter file plus a branch in `build_cloud_provider`.
+Nothing outside this package imports a vendor SDK.
 """
 
 from functools import lru_cache
-
-from fastapi import HTTPException
 
 from src.core.config import get_settings
 from src.llm.base import LLMProvider
@@ -23,7 +23,8 @@ def build_cloud_provider() -> tuple[LLMProvider, str] | None:
     """Construct the configured cloud provider, or None if no key is set.
 
     Returns (provider, model_name). Never raises for a missing key — the
-    router treats "not configured" as "try the next tier".
+    router treats "not configured" as "try the next tier", which is what
+    keeps ARIA working when an API key lapses.
     """
     settings = get_settings()
 
@@ -48,7 +49,7 @@ def build_cloud_provider() -> tuple[LLMProvider, str] | None:
         )
 
     if settings.llm_provider == "claude" and settings.anthropic_api_key:
-        from src.llm.claude import ClaudeProvider, MODEL
+        from src.llm.claude import MODEL, ClaudeProvider
 
         return ClaudeProvider(api_key=settings.anthropic_api_key), MODEL
 
@@ -56,56 +57,12 @@ def build_cloud_provider() -> tuple[LLMProvider, str] | None:
 
 
 @lru_cache
-def _cached_provider() -> LLMProvider:
-    """The configured default provider, or a clear error explaining the fix."""
-    settings = get_settings()
-    known = {"claude", "openai", "gemini"}
-    if settings.llm_provider not in known:
-        raise ValueError(
-            f"Unknown LLM_PROVIDER {settings.llm_provider!r} — "
-            f"use one of {sorted(known)}."
-        )
-
-    built = build_cloud_provider()
-    if built is not None:
-        return built[0]
-
-    # No cloud key: fall back to a local model rather than failing outright.
-    if settings.ollama_fast_model:
-        from src.llm.ollama import OllamaProvider
-
-        return OllamaProvider(
-            base_url=settings.ollama_base_url, model=settings.ollama_fast_model
-        )
-
-    key_name = {
-        "claude": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "gemini": "GEMINI_API_KEY",
-    }[settings.llm_provider]
-    raise ValueError(
-        f"{key_name} is not set, and no local Ollama model is configured. "
-        "Add the key to .env, or pull a local model "
-        "(`ollama pull llama3.2:3b`) and set OLLAMA_FAST_MODEL."
-    )
-
-
-def get_llm_provider() -> LLMProvider:
-    """FastAPI dependency returning the default provider.
-
-    Tests override this with a fake provider, so the suite never calls
-    (or pays for) a real API.
-    """
-    try:
-        return _cached_provider()
-    except ValueError as exc:
-        # 503 = "service not ready" — the honest status for missing config.
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-
-@lru_cache
 def get_router():
-    """FastAPI dependency returning the task-aware model router."""
+    """FastAPI dependency returning the task-aware model router.
+
+    Tests override this with a fake router, so the suite never calls
+    (or pays for) a real model.
+    """
     from src.llm.router import ModelRouter
 
     return ModelRouter()

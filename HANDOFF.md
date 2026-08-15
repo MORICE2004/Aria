@@ -34,9 +34,6 @@ None known.
 
 - **Cost tracking not persisted.** All adapters log token counts; nothing is
   stored or aggregated. ARIA cannot answer "what have I spent?"
-- **Only one agent path uses the router.** `/communication/summarize` is
-  migrated. Chat, drafting, job scoring, and the learning coach still call
-  `get_llm_provider()` and therefore always use the cloud provider.
 - **Auth still disabled** (`ARIA_PASSWORD` empty). Safe on localhost, unsafe
   the moment ARIA listens on the LAN.
 - No WhatsApp, no typed memory, no communication learning, no autonomy modes,
@@ -106,12 +103,21 @@ cd apps/api && .venv/Scripts/python -c "from src.llm.router import ModelRouter, 
   verifying a config change.
 - **`du -sh` on large repos is very slow on Windows** — avoid it.
 
+## Agent migration — COMPLETE (2026-08-16)
+
+All 9 LLM endpoints now declare a TaskClass. Chat, drafting and summarising
+run locally (free, private); job scoring, cover letters, interview prep and
+all three learning-coach tools escalate to cloud. `get_llm_provider()` was
+removed as dead code. Verified live — see `docs/ARIA_MODELS.md` for the table
+and the server-log evidence.
+
+New setting: `CONVERSE_LOCAL` (default true). Set false to send chat and
+drafting to the cloud model instead — the one routing choice with a real
+quality-vs-privacy tradeoff.
+
 ## Next steps (in priority order)
 
-1. **Migrate remaining agents to the router** — declare TaskClass per call
-   (memory extraction → ROUTINE, job fit scoring → REASON). Makes the router
-   actually save money rather than merely existing.
-2. **Cost/usage persistence** — `model_usage` table, surfaced on a Costs page.
+1. **Cost/usage persistence** — `model_usage` table, surfaced on a Costs page.
    Requires reporting usage out of the streaming interface.
 3. **Phase 4 — typed memory + governance** (working/episodic/preference/
    relationship/project), scoring, provenance, "why do you remember that?".

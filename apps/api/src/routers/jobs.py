@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.agents import jobsearch
 from src.db import get_session
-from src.llm import get_llm_provider
-from src.llm.base import LLMProvider
+from src.llm import get_router
+from src.llm.router import TaskClass
 from src.memory import get_memory_service
 from src.memory.service import MemoryService
 from src.models import JobApplication, RecruiterContact
@@ -123,15 +123,18 @@ async def delete_job(job_id: str, session: AsyncSession = Depends(get_session)):
 async def analyze_job(
     job_id: str,
     session: AsyncSession = Depends(get_session),
-    llm: LLMProvider = Depends(get_llm_provider),
+    model_router=Depends(get_router),
     memory: MemoryService = Depends(get_memory_service),
 ):
     """Score the posting against MORICE's profile; stores score + notes."""
     job = await _get_job(session, job_id)
     if not job.description.strip():
         raise HTTPException(422, "Add the job description first, then analyze.")
+    # Fit scoring must produce valid JSON and sound judgement — REASON-class,
+    # so it goes to the cloud model rather than a small local one.
+    routed = model_router.resolve(TaskClass.REASON)
     job.match_score, job.match_notes = await jobsearch.analyze(
-        llm, memory, session, description=job.description
+        routed.provider, memory, session, description=job.description
     )
     await session.commit()
     return job
@@ -142,14 +145,16 @@ async def draft_cover_letter(
     job_id: str,
     body: CoverLetterIn,
     session: AsyncSession = Depends(get_session),
-    llm: LLMProvider = Depends(get_llm_provider),
+    model_router=Depends(get_router),
     memory: MemoryService = Depends(get_memory_service),
 ):
     job = await _get_job(session, job_id)
     if not job.description.strip():
         raise HTTPException(422, "Add the job description first.")
+    # A cover letter is high-stakes writing — worth the stronger model.
+    routed = model_router.resolve(TaskClass.REASON)
     job.cover_letter = await jobsearch.cover_letter(
-        llm, memory, session, description=job.description, extra=body.extra
+        routed.provider, memory, session, description=job.description, extra=body.extra
     )
     await session.commit()
     return job
@@ -159,14 +164,15 @@ async def draft_cover_letter(
 async def interview_prep(
     job_id: str,
     session: AsyncSession = Depends(get_session),
-    llm: LLMProvider = Depends(get_llm_provider),
+    model_router=Depends(get_router),
     memory: MemoryService = Depends(get_memory_service),
 ):
     job = await _get_job(session, job_id)
     if not job.description.strip():
         raise HTTPException(422, "Add the job description first.")
+    routed = model_router.resolve(TaskClass.REASON)
     text = await jobsearch.interview_prep(
-        llm, memory, session, description=job.description
+        routed.provider, memory, session, description=job.description
     )
     return TextOut(text=text)
 

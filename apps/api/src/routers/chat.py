@@ -19,8 +19,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db import SessionMaker, get_session
-from src.llm import get_llm_provider
-from src.llm.base import ChatMessage, LLMProvider
+from src.llm import get_router
+from src.llm.base import ChatMessage
+from src.llm.router import TaskClass
 from src.memory import get_memory_service
 from src.memory.service import MemoryService
 from src.models import Conversation, Message
@@ -97,7 +98,7 @@ async def send_message(
     conversation_id: str,
     body: SendMessageIn,
     session: AsyncSession = Depends(get_session),
-    llm: LLMProvider = Depends(get_llm_provider),
+    model_router=Depends(get_router),
     memory: MemoryService = Depends(get_memory_service),
 ) -> StreamingResponse:
     """Save the user message, then stream the assistant's reply as plain text."""
@@ -132,11 +133,17 @@ async def send_message(
         conversation.title = body.content[:60]
     await session.commit()
 
+    # Conversation is CONVERSE-class work: local by default (free and private),
+    # cloud if CONVERSE_LOCAL=false.
+    routed = model_router.resolve(TaskClass.CONVERSE)
+
     async def stream():
         """Yield chunks to the browser; persist the full reply at the end."""
         parts: list[str] = []
         try:
-            async for chunk in llm.stream_chat(history, system=system_prompt):
+            async for chunk in routed.provider.stream_chat(
+                history, system=system_prompt
+            ):
                 parts.append(chunk)
                 yield chunk
         finally:

@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # When true, prefer local models even for REASON-class tasks (free + private,
     # at some quality cost). When false, REASON prefers cloud.
     prefer_local: bool = False
+    # Chat and drafting on a local model: free and fully private, but a small
+    # local model is noticeably weaker than a cloud one. Set false to send
+    # conversation to the cloud provider instead. This is the single most
+    # user-visible routing choice, so it gets its own switch.
+    converse_local: bool = True
 
     # --- Auth (Phase 4) ---
     # If aria_password is empty, auth is DISABLED (local dev mode).
