@@ -4,8 +4,11 @@ Updated 2026-08-16. Keep this current after every significant phase.
 
 ## Current phase
 
-**ARIA 2.0 directive — Phase 0 (audit) and Phase 3 (model router) complete.**
-Phase 1 (stabilize) complete as a side effect. Phases 2, 4–22 not started.
+**ARIA 2.0 directive — Phases 0, 1, 3, 5, 7, 8 complete.**
+Audit, stabilize, model router, communication learning, WhatsApp connection,
+and WhatsApp observe mode are all done and verified with real data.
+Remaining: 2 (architecture cleanup), 4 (typed memory), 6 (OpenClaw — now
+superseded by the read-only Baileys bridge), 9-22.
 
 ## Current status
 
@@ -13,7 +16,7 @@ ARIA 1.0 was audited and found healthy: 51 tests passing, no TODOs, no stubs,
 no broken features. The 2.0 work so far is **additive** — nothing was removed
 or rebuilt.
 
-**57 tests passing.** Frontend lint + build clean.
+**100 tests passing.** Frontend lint + build clean.
 
 ## Working features (verified this session)
 
@@ -36,9 +39,10 @@ None known.
   stored or aggregated. ARIA cannot answer "what have I spent?"
 - **Auth still disabled** (`ARIA_PASSWORD` empty). Safe on localhost, unsafe
   the moment ARIA listens on the LAN.
-- No WhatsApp, no typed memory, no communication learning, no autonomy modes,
-  no emergency stop, no contacts model, no research/document agents, no
-  proactive engine, no Qdrant, no mem0 integration.
+- No typed memory (Phase 4), no research/document agents, no proactive
+  engine, no Qdrant, no mem0 integration.
+- Relationship-scoped style profiles not yet measured (scope system supports
+  them; only global and per-contact are written today).
 
 ## Files created this session
 
@@ -130,29 +134,46 @@ request as `financial` + `high` urgency. **76 tests passing** (19 new).
 
 Phase 7 (real account link) is still outstanding — see "Blocked on MORICE".
 
+## Phase 5 - Communication learning COMPLETE (2026-08-16)
+
+ARIA learns MORICE's writing voice from his real messages. Statistical
+analysis (no LLM guessing), confidence = evidence/(evidence+8) capped at 0.95,
+patterns below 0.25 excluded from prompts. Explicit rules trusted at 0.95.
+Only direction="out" messages train his voice.
+
+Verified live: 10 messages produced a real profile (5.4 avg words, 100%
+lowercase openings, 'hey' 4x, 'just checking' 4x, 40% English/Kiswahili mix).
+A live draft for "still meeting tomorrow?" returned "hey, yeah, still on" -
+matching every learned pattern.
+
+Full transparency at /style: every pattern with evidence, the literal prompt
+block, preview-before-learning, and delete.
+
+Bug found+fixed: multiple lessons from one edit shared a key and overwrote
+each other, so evidence never accumulated. 100 tests passing.
+
 ## Next steps (in priority order)
 
-1. **Cost/usage persistence** — `model_usage` table, surfaced on a Costs page.
-   Requires reporting usage out of the streaming interface.
-3. **Phase 4 — typed memory + governance** (working/episodic/preference/
+1. **Phase 9 — suggestion mode**: real drafts for trusted contacts, surfaced
+   in the approvals queue, feeding edits back into the learning loop.
+2. **Phase 4 — typed memory + governance** (working/episodic/preference/
    relationship/project), scoring, provenance, "why do you remember that?".
-4. **Phase 5 — communication learning loop** (observe → draft → compare edit →
-   learn, with confidence scores and per-contact profiles). This is the
-   directive's stated most-important feature and depends on Phase 4.
-5. **Phases 6–13 — OpenClaw/WhatsApp**, which needs MORICE's decision (see below).
+3. **Cost/usage persistence** — `model_usage` table, surfaced on a Costs page.
+4. **Relationship-scoped style** — measure per relationship type, not just
+   global and per-contact.
 
-## Blocked on MORICE
+## WhatsApp transport — RESOLVED (2026-08-16)
 
-**WhatsApp (phases 6–13) requires a decision only he can make.**
+Originally routed through OpenClaw. OpenClaw is an AI gateway that
+auto-replies with its own agent; that fired on a real inbound message. It was
+replaced with `apps/wa-bridge`, a read-only Baileys client containing no send
+code, enforced by `npm run verify-readonly` before every start.
 
-1. *What is needed:* his consent to link his personal WhatsApp number, and a
-   QR-code scan he must perform physically.
-2. *Why:* OpenClaw links as a WhatsApp Web device; the scan cannot be automated.
-3. *Where to obtain:* WhatsApp → Settings → Linked Devices.
-4. *Where it goes:* `openclaw channels login --channel whatsapp`.
-5. *What happens after:* build the ARIA↔OpenClaw bridge in **observe mode
-   first** (Phase 8) — read and learn only, no sending — then suggestion mode.
+OpenClaw's WhatsApp channel and the aria-bridge hook are disabled. The demo
+number is paired to the Baileys bridge and real messages flow into ARIA.
 
-**Known risk, stated once:** automating WhatsApp violates its Terms of
-Service; numbers do get banned, more likely with automated sending. A
-dedicated secondary number is the safer option.
+Start with `start-whatsapp-bridge.ps1`. Delete `apps/wa-bridge/auth/` and
+re-run to re-pair.
+
+**Known risk:** automating WhatsApp violates its Terms of Service. Read-only
+is lower risk than sending, but not zero. Use the demo number.

@@ -140,7 +140,42 @@ export type WaOverview = {
   contacts: (WaContact & { message_count: number })[];
 };
 
+export type StylePattern = {
+  id: string;
+  dimension: string;
+  scope: string;
+  value: string;
+  confidence: number;
+  evidence_count: number;
+  source: string;
+};
+export type StyleProfile = { patterns: StylePattern[]; prompt_block: string };
+
 export const api = {
+  getStyleProfile: () => request<StyleProfile>("/style"),
+  refreshStyle: () =>
+    request<{ dimensions: Record<string, string>; sample_size: number }>(
+      "/style/refresh",
+      { method: "POST" },
+    ),
+  addStyleRule: (rule: string) =>
+    request<StylePattern>("/style/rules", {
+      method: "POST",
+      body: JSON.stringify({ rule }),
+    }),
+  forgetStylePattern: (id: string) =>
+    request<void>(`/style/patterns/${id}`, { method: "DELETE" }),
+  previewLessons: (draft: string, final: string) =>
+    request<{ recorded: boolean; lessons: string[] }>("/style/preview-lessons", {
+      method: "POST",
+      body: JSON.stringify({ draft, final }),
+    }),
+  recordStyleFeedback: (kind: string, draft: string, final: string) =>
+    request<{ recorded: boolean; lessons: string[] }>("/style/feedback", {
+      method: "POST",
+      body: JSON.stringify({ kind, draft, final }),
+    }),
+
   waOverview: () => request<WaOverview>("/whatsapp/overview"),
   waAutonomy: () => request<WaAutonomy>("/whatsapp/autonomy"),
   waSetAutonomy: (patch: { mode?: string; emergency_stop?: boolean }) =>

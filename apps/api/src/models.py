@@ -224,6 +224,53 @@ class WhatsAppMessage(Base):
     simulated: Mapped[bool] = mapped_column(default=False)
 
 
+class StylePattern(Base):
+    """One learned fact about how MORICE writes.
+
+    Scoped: a pattern can be global, per-relationship-type, or per-contact —
+    because he does not write to his boss the way he writes to a friend.
+    More specific scopes win when building a profile.
+
+    `confidence` and `evidence_count` exist so a single message can never
+    become a permanent rule. Nothing here is ever invented: statistical
+    dimensions are computed from real messages, and the counts are real.
+    """
+
+    __tablename__ = "style_patterns"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    # e.g. "avg_words", "greeting", "emoji_rate", "signoff", "formality"
+    dimension: Mapped[str] = mapped_column(String(40), index=True)
+    # "global" | "relationship:friend" | "contact:<id>"
+    scope: Mapped[str] = mapped_column(String(60), index=True, default="global")
+    value: Mapped[str] = mapped_column(Text)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    evidence_count: Mapped[int] = mapped_column(default=0)
+    # Where the evidence came from, for "why do you think that?"
+    source: Mapped[str] = mapped_column(String(30), default="observed")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class LearningEvent(Base):
+    """A moment ARIA could learn from: an approval, an edit, a rejection, or
+    an explicit instruction from MORICE ("never write Dear Sir/Madam").
+
+    Kept append-only in spirit: these are the evidence behind every pattern,
+    so a pattern can always be explained and audited.
+    """
+
+    __tablename__ = "learning_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    # observed | approved | edited | rejected | rule
+    kind: Mapped[str] = mapped_column(String(20), index=True)
+    contact_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    draft: Mapped[str] = mapped_column(Text, default="")      # what ARIA wrote
+    final: Mapped[str] = mapped_column(Text, default="")      # what MORICE used
+    note: Mapped[str] = mapped_column(Text, default="")       # his explanation
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class AutonomyState(Base):
     """Singleton row holding ARIA's global autonomy mode and the kill switch.
 

@@ -65,20 +65,28 @@ async def draft_reply(
     platform: str,
     conversation: str,
     instructions: str,
+    contact=None,
 ) -> str:
-    """Draft a reply in MORICE's style. Returns text only — never sends."""
-    # Pull writing-style samples so the draft sounds like him.
+    """Draft a reply in MORICE's style. Returns text only — never sends.
+
+    Style comes from the LEARNED profile (measured from his real messages,
+    with confidence scores) rather than from raw samples. Hand-written style
+    memories are still appended as supporting examples when present.
+    """
+    from src.communication import learning
+
+    style_block = await learning.build_profile_block(session, contact)
+
+    # Hand-curated style memories remain useful as concrete examples.
     style_hits = [
         h
         for h in await memory.search(session, f"writing style {platform} messages", k=6)
         if h.kind == "style"
-    ][:3]
-    style_block = (
-        "MORICE's writing samples (imitate this voice):\n"
-        + "\n---\n".join(h.content for h in style_hits)
-        if style_hits
-        else "No style samples available — write neutrally and naturally."
-    )
+    ][:2]
+    if style_hits:
+        style_block += "\n\nExamples he wrote himself:\n" + "\n---\n".join(
+            h.content for h in style_hits
+        )
 
     user_content = (
         f"Platform: {platform} ({PLATFORM_HINTS[platform]})\n\n"
