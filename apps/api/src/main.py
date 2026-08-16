@@ -21,6 +21,7 @@ from src.routers import (
     auth,
     chat,
     communication,
+    connect,
     health,
     jobs,
     learning,
@@ -74,6 +75,9 @@ def create_app() -> FastAPI:
     # Public: health (monitoring) and auth (you must be able to log in).
     app.include_router(health.router)
     app.include_router(auth.router)
+    # Public: exposes only a private-LAN address, so the phone can find ARIA
+    # before the user has logged in.
+    app.include_router(connect.router)
     # Protected: everything with personal data requires a valid token
     # (require_auth is a no-op while ARIA_PASSWORD is unset — dev mode).
     protected = [Depends(require_auth)]

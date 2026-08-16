@@ -21,6 +21,7 @@ fastembed~=0.5           # local CPU embeddings — free, private, no extra API 
 
 # Auth + email (Phase 4)
 pyjwt~=2.10              # signs/verifies login tokens (JWT)
+qrcode>=8,<9             # renders the phone-access QR locally (no external service)
 email-validator~=2.2     # lets Pydantic validate EmailStr fields
 
 # Development / testing

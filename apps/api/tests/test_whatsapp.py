@@ -227,12 +227,24 @@ def ingest_secret():
     s.openclaw_ingest_secret = before
 
 
-def test_ingest_disabled_by_default(client: TestClient) -> None:
-    """Fails closed: no secret configured means no ingest."""
-    r = client.post(
-        "/whatsapp/ingest", json={"handle": "x@s.whatsapp.net", "body": "hi"}
-    )
-    assert r.status_code == 503
+def test_ingest_disabled_when_no_secret_configured(client: TestClient) -> None:
+    """Fails closed: no secret configured means no ingest.
+
+    Explicitly clears the setting — the real .env may have a secret, and a
+    test must not depend on the developer's local configuration.
+    """
+    from src.core.config import get_settings
+
+    s = get_settings()
+    before = s.openclaw_ingest_secret
+    s.openclaw_ingest_secret = ""
+    try:
+        r = client.post(
+            "/whatsapp/ingest", json={"handle": "x@s.whatsapp.net", "body": "hi"}
+        )
+        assert r.status_code == 503
+    finally:
+        s.openclaw_ingest_secret = before
 
 
 def test_ingest_rejects_wrong_secret(client: TestClient, ingest_secret) -> None:
