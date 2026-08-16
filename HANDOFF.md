@@ -4,7 +4,7 @@ Updated 2026-08-16. Keep this current after every significant phase.
 
 ## Current phase
 
-**ARIA 2.0 directive — Phases 0, 1, 3, 5, 7, 8, 9 complete.**
+**ARIA 2.0 directive — Phases 0, 1, 3, 4, 5, 7, 8, 9 complete, plus cost tracking (S43).**
 Audit, stabilize, model router, communication learning, WhatsApp connection,
 and WhatsApp observe mode are all done and verified with real data.
 Remaining: 2 (architecture cleanup), 4 (typed memory), 6 (OpenClaw — now
@@ -16,7 +16,7 @@ ARIA 1.0 was audited and found healthy: 51 tests passing, no TODOs, no stubs,
 no broken features. The 2.0 work so far is **additive** — nothing was removed
 or rebuilt.
 
-**109 tests passing.** Frontend lint + build clean.
+**128 tests passing.** Frontend lint + build clean.
 
 ## Working features (verified this session)
 
@@ -35,12 +35,13 @@ None known.
 
 ## Known gaps / not yet done
 
-- **Cost tracking not persisted.** All adapters log token counts; nothing is
-  stored or aggregated. ARIA cannot answer "what have I spent?"
 - **Auth still disabled** (`ARIA_PASSWORD` empty). Safe on localhost, unsafe
   the moment ARIA listens on the LAN.
-- No typed memory (Phase 4), no research/document agents, no proactive
-  engine, no Qdrant, no mem0 integration.
+- No research agent (14), no document intelligence (17), no proactive
+  engine (19), no Qdrant, no mem0 integration.
+- Auth implemented and tested but DISABLED (ARIA_PASSWORD empty).
+- No supervised send (11) - and with the read-only bridge, sending would
+  require a deliberate new transport decision.
 - Relationship-scoped style profiles not yet measured (scope system supports
   them; only global and per-contact are written today).
 
@@ -173,9 +174,10 @@ which database it runs against.
 
 1. **Phase 4 — typed memory + governance** (working/episodic/preference/
    relationship/project), scoring, provenance, "why do you remember that?".
-3. **Cost/usage persistence** — `model_usage` table, surfaced on a Costs page.
-4. **Relationship-scoped style** — measure per relationship type, not just
+2. **Relationship-scoped style** — measure per relationship type, not just
    global and per-contact.
+3. **Phase 19 — proactive ARIA** (configurable; needs a scheduler).
+4. **Phase 20 — security hardening**: enable auth, rate limiting, backups.
 
 ## WhatsApp transport — RESOLVED (2026-08-16)
 
