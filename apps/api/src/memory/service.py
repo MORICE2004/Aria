@@ -37,10 +37,34 @@ class MemoryService:
         self._embedder = embedder
 
     async def ingest(
-        self, session: AsyncSession, *, title: str, content: str, kind: str
+        self,
+        session: AsyncSession,
+        *,
+        title: str,
+        content: str,
+        kind: str,
+        explicit: bool = False,
+        provenance: str = "",
     ) -> MemoryItem:
-        """Store a memory item: chunk it, embed the chunks, save everything."""
-        item = MemoryItem(title=title, kind=kind, content=content)
+        """Store a memory item: judge it, chunk it, embed the chunks, save.
+
+        Governance runs first so every memory carries a type, an importance
+        score, a lifetime, and a reason it exists.
+        """
+        from src.memory import governance
+
+        verdict = governance.judge(
+            title=title, content=content, kind=kind, explicit=explicit
+        )
+        item = MemoryItem(
+            title=title,
+            kind=kind,
+            content=content,
+            memory_type=verdict.memory_type,
+            importance=verdict.importance,
+            expires_at=verdict.expires_at,
+            provenance=provenance or verdict.reason,
+        )
         session.add(item)
         await session.flush()  # assigns item.id before we reference it below
 

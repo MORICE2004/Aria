@@ -86,7 +86,16 @@ class Message(Base):
 
 
 class MemoryItem(Base):
-    """One remembered thing: a note, a document, a fact, or a writing sample."""
+    """One remembered thing.
+
+    `kind` is WHAT it is (note/document/fact/style). `memory_type` is HOW it
+    should behave — whether it is durable personal knowledge, a passing
+    detail, or a project fact that expires when the project ends. Those are
+    different questions, so they are different columns.
+
+    `provenance` answers "why do you remember that?" — the single most
+    important field for trusting a memory system.
+    """
 
     __tablename__ = "memory_items"
 
@@ -94,6 +103,22 @@ class MemoryItem(Base):
     title: Mapped[str] = mapped_column(String(200))
     kind: Mapped[str] = mapped_column(String(20))  # "note" | "document" | "fact" | "style"
     content: Mapped[str] = mapped_column(Text)     # full original text
+    # longterm | preference | project | relationship | episodic | transient
+    memory_type: Mapped[str] = mapped_column(String(20), default="longterm", index=True)
+    # 0-1: how much this deserves to persist. Low-scoring memories are
+    # retrieved last and are the first suggested for cleanup.
+    importance: Mapped[float] = mapped_column(Float, default=0.5)
+    # Where it came from, in MORICE's terms: "you told me", "from your CV",
+    # "extracted from a WhatsApp message on 2026-08-16".
+    provenance: Mapped[str] = mapped_column(String(300), default="")
+    # Transient memories expire; everything else has no expiry.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    use_count: Mapped[int] = mapped_column(default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
     chunks: Mapped[list["MemoryChunk"]] = relationship(
