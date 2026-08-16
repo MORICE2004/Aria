@@ -28,6 +28,7 @@ from src.routers import (
     learning,
     memory,
     notifications,
+    proactive,
     style,
     tasks,
     whatsapp,
@@ -46,6 +47,8 @@ async def lifespan(app: FastAPI):
     await init_db()
 
     settings = get_settings()
+    started: list = []
+
     if settings.whatsapp_worker_enabled:
         from src.db import SessionMaker
         from src.llm import get_router
@@ -56,13 +59,19 @@ async def lifespan(app: FastAPI):
             get_router(),
             poll_seconds=settings.whatsapp_worker_poll_seconds,
         )
-        try:
-            yield
-        finally:
-            await stop_worker()
-        return
+        started.append(stop_worker)
 
-    yield
+    if settings.proactive_enabled:
+        from src.proactive.scheduler import start_scheduler, stop_scheduler
+
+        start_scheduler(interval_seconds=settings.proactive_interval_seconds)
+        started.append(stop_scheduler)
+
+    try:
+        yield
+    finally:
+        for stop in started:
+            await stop()
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -156,6 +165,7 @@ def create_app() -> FastAPI:
     app.include_router(whatsapp.router, dependencies=protected)
     app.include_router(style.router, dependencies=protected)
     app.include_router(costs.router, dependencies=protected)
+    app.include_router(proactive.router, dependencies=protected)
     # Secret-authenticated, called by the local OpenClaw gateway — not JWT.
     app.include_router(whatsapp.ingest_router)
 

@@ -269,7 +269,28 @@ export type WaQueueStats = {
   backlog_seconds: number;
 };
 
+/** Something ARIA noticed on her own, without being asked. */
+export type Insight = {
+  id: string;
+  key: string;
+  severity: "urgent" | "attention" | "fyi";
+  title: string;
+  detail: string;
+  link: string;
+  action: string;
+  status: string;
+  created_at: string;
+};
+
 export const api = {
+  listInsights: () => request<Insight[]>("/proactive"),
+  dismissInsight: (id: string) =>
+    request<Insight>(`/proactive/${id}/dismiss`, { method: "POST" }),
+  runProactiveChecks: () =>
+    request<{ new_insights: number; keys: string[] }>("/proactive/run", {
+      method: "POST",
+    }),
+
   listDrafts: () => request<WaDraft[]>("/whatsapp/drafts"),
   decideDraft: (id: string, decision: string, final = "") =>
     request<{ status: string; lessons: string[]; sent: boolean }>(

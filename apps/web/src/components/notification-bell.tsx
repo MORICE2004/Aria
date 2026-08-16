@@ -10,13 +10,21 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, Mail, ShieldCheck, CalendarClock } from "lucide-react";
-import { api, type Notifications } from "@/lib/api";
+import { Bell, Lightbulb, Mail, ShieldCheck, CalendarClock } from "lucide-react";
+import { api, type Insight, type Notifications } from "@/lib/api";
+
+/** Insights ARIA raised on her own sort above things she was asked to track. */
+const SEVERITY_STYLE: Record<string, string> = {
+  urgent: "text-red-400",
+  attention: "text-amber-400",
+  fyi: "text-cyan-400",
+};
 
 const POLL_MS = 60_000;
 
 export function NotificationBell() {
   const [data, setData] = useState<Notifications | null>(null);
+  const [insights, setInsights] = useState<Insight[]>([]);
   const [open, setOpen] = useState(false);
   // Remember what we've already notified about, so we only alert on NEW items.
   const seen = useRef<Set<string>>(new Set());
@@ -24,19 +32,29 @@ export function NotificationBell() {
 
   const poll = useCallback(async () => {
     try {
-      const next = await api.getNotifications();
+      const [next, noticed] = await Promise.all([
+        api.getNotifications(),
+        // Things ARIA noticed unprompted. Fetched alongside rather than in a
+        // separate poll so the panel always shows one coherent moment.
+        api.listInsights().catch(() => [] as Insight[]),
+      ]);
       setData(next);
+      setInsights(noticed);
 
       const keys = [
+        ...noticed.map((i) => `insight:${i.key}`),
         ...(next.unread_emails ?? []).map((e) => `mail:${e.sender}:${e.subject}`),
         ...next.due_tasks.map((t) => `task:${t.id}`),
       ];
       if (!firstLoad.current && Notification.permission === "granted") {
         for (const key of keys) {
           if (!seen.current.has(key)) {
-            const body = key.startsWith("mail:")
-              ? `New email — ${key.slice(5)}`
-              : `Task due — ${next.due_tasks.find((t) => `task:${t.id}` === key)?.title}`;
+            const insight = noticed.find((i) => `insight:${i.key}` === key);
+            const body = insight
+              ? insight.title
+              : key.startsWith("mail:")
+                ? `New email — ${key.slice(5)}`
+                : `Task due — ${next.due_tasks.find((t) => `task:${t.id}` === key)?.title}`;
             new Notification("ARIA", { body, icon: "/icon.svg" });
           }
         }
@@ -58,9 +76,12 @@ export function NotificationBell() {
   }, [poll]);
 
   const count =
+    insights.length +
     (data?.pending_approvals ?? 0) +
     (data?.due_tasks.length ?? 0) +
     (data?.unread_emails?.length ?? 0);
+
+  const urgent = insights.some((i) => i.severity === "urgent");
 
   function toggle() {
     if (!open && "Notification" in window && Notification.permission === "default") {
@@ -78,7 +99,11 @@ export function NotificationBell() {
       >
         <Bell size={18} aria-hidden />
         {count > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-400 px-1 text-[10px] font-bold text-cyan-950">
+          <span
+            className={`absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+              urgent ? "bg-red-400 text-red-950" : "bg-cyan-400 text-cyan-950"
+            }`}
+          >
             {count > 9 ? "9+" : count}
           </span>
         )}
@@ -86,6 +111,42 @@ export function NotificationBell() {
 
       {open && data && (
         <div className="glass mt-2 max-h-[70vh] w-80 overflow-y-auto rounded-xl p-3 text-sm shadow-2xl">
+          {/* Things ARIA noticed unprompted come first: they are the only
+              items here she raised herself, and the only ones nobody would
+              otherwise be looking for. */}
+          {insights.map((i) => (
+            <div key={i.id} className="mb-1 rounded-lg p-2 hover:bg-white/5">
+              <Link
+                href={i.link || "/"}
+                onClick={() => setOpen(false)}
+                className="flex items-start gap-2"
+              >
+                <Lightbulb
+                  size={15}
+                  className={`mt-0.5 shrink-0 ${SEVERITY_STYLE[i.severity] ?? "text-cyan-400"}`}
+                  aria-hidden
+                />
+                <span>
+                  <span className="block font-medium">{i.title}</span>
+                  <span className="block text-xs text-zinc-400">{i.detail}</span>
+                  {i.action && (
+                    <span className="mt-0.5 block text-xs text-zinc-500">
+                      {i.action}
+                    </span>
+                  )}
+                </span>
+              </Link>
+              <button
+                onClick={async () => {
+                  await api.dismissInsight(i.id);
+                  setInsights((all) => all.filter((x) => x.id !== i.id));
+                }}
+                className="ml-6 mt-1 text-[10px] text-zinc-600 hover:text-zinc-300"
+              >
+                Dismiss
+              </button>
+            </div>
+          ))}
           {data.pending_approvals > 0 && (
             <Link
               href="/approvals"

@@ -572,6 +572,43 @@ class OutboundMessage(Base):
     )
 
 
+class Insight(Base):
+    """Something ARIA noticed on her own and thinks MORICE should know.
+
+    Persisted rather than computed on demand, for two reasons: "say it once"
+    has to survive a restart, and a dismissal has to stay dismissed. A
+    proactive assistant that re-raises everything it has ever noticed, every
+    time it runs, is one you learn to ignore — and an ignored assistant is
+    strictly worse than a silent one.
+
+    `key` is stable for a given underlying situation, so re-running the checks
+    updates an existing row instead of creating a duplicate.
+    """
+
+    __tablename__ = "insights"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    key: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    severity: Mapped[str] = mapped_column(String(20), default="fyi", index=True)
+    title: Mapped[str] = mapped_column(String(300))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    link: Mapped[str] = mapped_column(String(200), default="")
+    # What MORICE could do about it. An insight with no next step should not
+    # have been raised.
+    action: Mapped[str] = mapped_column(String(300), default="")
+    # open | dismissed
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now
+    )
+    dismissed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class ActionRequest(Base):
     """A sensitive action an agent WANTS to perform — pending human approval.
 

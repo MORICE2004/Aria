@@ -79,6 +79,14 @@ class Settings(BaseSettings):
     whatsapp_worker_enabled: bool = True
     whatsapp_worker_poll_seconds: float = 2.0
 
+    # --- Proactive engine ---
+    # ARIA noticing things without being asked. Five minutes is frequent
+    # enough to catch a stalled queue while it still matters, and rare enough
+    # that the checks cost nothing. Disabled in tests, which run them
+    # explicitly so behaviour is deterministic rather than timed.
+    proactive_enabled: bool = True
+    proactive_interval_seconds: float = 300.0
+
     # --- Incoming email via IMAP (read-only inbox) ---
     # Gmail: imap.gmail.com, same address + App Password as SMTP.
     imap_host: str = ""
