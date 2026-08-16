@@ -111,13 +111,44 @@ def client() -> TestClient:
 
     asyncio.run(_create())
 
-    # The streaming endpoint persists the reply via the module-level
-    # SessionMaker; point it at the test database too, and restore after.
+    # Three places use the module-level SessionMaker instead of a request
+    # session, because they outlive a single request: the streaming chat
+    # endpoint, the queue drain, and the gateway executor that hands a message
+    # to the outbound queue. Point them all at the test database — otherwise a
+    # test that triggers an autonomous send would write to real Postgres.
     import src.routers.chat as chat_module
+    import src.routers.whatsapp as whatsapp_module
+    import src.whatsapp.sending as sending_module
 
-    original_maker = chat_module.SessionMaker
-    chat_module.SessionMaker = maker
+    originals = {
+        chat_module: chat_module.SessionMaker,
+        whatsapp_module: whatsapp_module.SessionMaker,
+        sending_module: sending_module.SessionMaker,
+    }
+    for module in originals:
+        module.SessionMaker = maker
+
+    test_client = TestClient(app, raise_server_exceptions=True)
+    # Handed to tests that need to drive the queue directly rather than
+    # through HTTP (outage simulation, restart recovery).
+    test_client.session_maker = maker
     try:
-        yield TestClient(app, raise_server_exceptions=True)
+        yield test_client
     finally:
-        chat_module.SessionMaker = original_maker
+        for module, original in originals.items():
+            module.SessionMaker = original
+
+
+@pytest.fixture
+def ingest_secret():
+    """Enable the shared-secret endpoints (ingest, outbound handover).
+
+    Both fail closed when unset, so any test touching them needs this.
+    """
+    from src.core.config import get_settings
+
+    settings = get_settings()
+    before = settings.openclaw_ingest_secret
+    settings.openclaw_ingest_secret = "test-ingest-secret"
+    yield "test-ingest-secret"
+    settings.openclaw_ingest_secret = before

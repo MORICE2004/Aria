@@ -33,14 +33,14 @@ def test_emergency_stop_overrides_every_mode() -> None:
 
 def test_unknown_contact_is_observe_only_even_when_fully_autonomous() -> None:
     assert (
-        effective_mode(Mode.AUTONOMOUS, TrustLevel.UNKNOWN, emergency_stop=False)
+        effective_mode(Mode.FULL_AUTONOMY, TrustLevel.UNKNOWN, emergency_stop=False)
         is Mode.OBSERVE
     )
 
 
 def test_never_autonomous_caps_at_suggest() -> None:
     assert (
-        effective_mode(Mode.AUTONOMOUS, TrustLevel.NEVER_AUTONOMOUS, emergency_stop=False)
+        effective_mode(Mode.FULL_AUTONOMY, TrustLevel.NEVER_AUTONOMOUS, emergency_stop=False)
         is Mode.SUGGEST
     )
 
@@ -59,7 +59,7 @@ def test_capability_gates() -> None:
     assert not may_send_with_approval(Mode.SUGGEST)
     assert may_send_with_approval(Mode.SUPERVISED)
     assert not may_send_automatically(Mode.SUPERVISED)
-    assert may_send_automatically(Mode.TRUSTED)
+    assert may_send_automatically(Mode.LIMITED_AUTONOMY)
 
 
 # ---------- classification parsing ----------
@@ -119,7 +119,7 @@ def test_observe_mode_stores_message_but_never_drafts(client: TestClient) -> Non
 
 def test_raising_global_mode_does_not_unlock_unknown_contacts(client: TestClient) -> None:
     """The core safety property: global autonomy != per-contact autonomy."""
-    client.patch("/whatsapp/autonomy", json={"mode": "trusted"})
+    client.patch("/whatsapp/autonomy", json={"mode": "limited_autonomy"})
     obs = client.post(
         "/whatsapp/simulate",
         json={"handle": "stranger@s.whatsapp.net", "name": "Stranger", "body": "hi"},
@@ -151,7 +151,7 @@ def test_emergency_stop_forces_observe_and_blocks_escalation(client: TestClient)
     assert stopped["mode"] == "observe"
 
     # Cannot raise the mode while stopped.
-    blocked = client.patch("/whatsapp/autonomy", json={"mode": "trusted"})
+    blocked = client.patch("/whatsapp/autonomy", json={"mode": "limited_autonomy"})
     assert blocked.status_code == 409
 
     # Clearing the stop is possible, and leaves us in observe (not the old mode).
@@ -259,15 +259,30 @@ def test_ingest_rejects_wrong_secret(client: TestClient, ingest_secret) -> None:
 def test_ingest_observes_real_message_without_sending(
     client: TestClient, ingest_secret
 ) -> None:
+    """Ingest acknowledges durability, then reports what observation found.
+
+    202 rather than 201: the response promises the message is *stored*, which
+    is a different (and stronger) promise than "processed".
+    """
     r = client.post(
         "/whatsapp/ingest",
         json={"handle": "49111@s.whatsapp.net", "name": "Ann", "body": "you around?"},
         headers={"X-ARIA-Ingest-Secret": ingest_secret},
     )
-    assert r.status_code == 201
-    body = r.json()
-    assert body["effective_mode"] == "observe"
-    assert body["draft"] is None and body["sent"] is False
+    assert r.status_code == 202
+    assert r.json()["queued"] is True and r.json()["duplicate"] is False
+
+    # Understanding happens out of band; drive it the way the worker does.
+    assert client.post("/whatsapp/queue/drain").json()["processed"] == 1
+
+    contact = next(
+        c for c in client.get("/whatsapp/contacts").json()
+        if c["handle"] == "49111@s.whatsapp.net"
+    )
+    assert contact["effective_mode"] == "observe"
+    # Observe mode: the message was recorded, and no draft was produced.
+    assert client.get(f"/whatsapp/contacts/{contact['id']}/messages").json()
+    assert client.get("/whatsapp/drafts").json() == []
 
 
 # ---------- phase 9: suggestion mode ----------

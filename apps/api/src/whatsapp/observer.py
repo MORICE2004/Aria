@@ -27,8 +27,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.llm.base import ChatMessage, LLMProvider
 from src.llm.router import TaskClass
 from src.models import Contact, WhatsAppMessage
-from src.whatsapp import autonomy
+from src.whatsapp import autonomy, decision
 from src.whatsapp.autonomy import Mode
+from src.whatsapp.decision import Outcome
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +80,15 @@ class Observation:
     mode: Mode
     mode_reason: str
     classification: Classification | None
-    # Populated only when the effective mode permits drafting. In OBSERVE
+    # Populated only when the autonomy engine permits drafting. In OBSERVE
     # mode this is always None — enforced here, not by prompt.
     draft: str | None
+    # The autonomy engine's verdict on this exchange, with its reasons. None
+    # for outbound messages, which are observed for style only.
+    outcome: "Outcome | None" = None
+    # Set when the decision was AUTO_SEND and the reply was queued for the
+    # gateway. The send itself never happens in this module.
+    autonomous_response_id: str | None = None
 
 
 def parse_classification(text: str) -> Classification | None:
@@ -190,15 +197,104 @@ async def observe(
     if classification is None:
         logger.warning("Classifier returned unusable output for message %s", message.id)
 
-    # THE GATE. In observe mode no draft is produced, full stop.
-    draft = None
-    if autonomy.may_draft(mode):
-        draft = await _prepare_draft(
-            session, model_router, contact=contact, incoming=body,
-            classification=classification,
+    # THE GATE. One call, one answer, and everything downstream obeys it.
+    # Evaluated on the incoming message first: a BLOCK here means ARIA does not
+    # even compose a reply, which matters because composing one costs a model
+    # call and, more importantly, creates a plausible-looking thing that
+    # somebody might later send by mistake.
+    outcome = await decision.evaluate(session, contact, incoming=body)
+
+    if outcome.decision is decision.Decision.BLOCK:
+        logger.info(
+            "Blocked for %s: %s", contact.handle, outcome.reasons[0] if outcome.reasons else ""
+        )
+        return Observation(
+            contact, message, mode, reason, classification, None, outcome
         )
 
-    return Observation(contact, message, mode, reason, classification, draft)
+    draft = await _prepare_draft(
+        session, model_router, contact=contact, incoming=body,
+        classification=classification,
+    )
+    if draft is None:
+        return Observation(
+            contact, message, mode, reason, classification, None, outcome
+        )
+
+    # Re-evaluate WITH the proposed reply. A harmless question can attract a
+    # reply that commits MORICE to something; judging only the inbound message
+    # would miss exactly that case.
+    final_outcome = await decision.evaluate(
+        session, contact, incoming=body, proposed_reply=draft
+    )
+
+    autonomous_response_id = None
+    if final_outcome.decision is decision.Decision.AUTO_SEND:
+        autonomous_response_id = await _queue_autonomous_reply(
+            session,
+            contact=contact,
+            incoming=body,
+            reply=draft,
+            outcome=final_outcome,
+            routed=routed,
+            inbound_message_id=message.id,
+        )
+
+    return Observation(
+        contact, message, mode, reason, classification, draft,
+        final_outcome, autonomous_response_id,
+    )
+
+
+async def _queue_autonomous_reply(
+    session: AsyncSession,
+    *,
+    contact: Contact,
+    incoming: str,
+    reply: str,
+    outcome,
+    routed,
+    inbound_message_id: str,
+) -> str:
+    """Record an autonomous reply and submit it to the Action Gateway.
+
+    Note what this does NOT do: send anything. It writes the decision to the
+    record and hands the send to the gateway, which re-checks permission at
+    execution time. Keeping the deciding code and the sending code apart is
+    what stops a bug in the reasoning path from becoming a sent message.
+    """
+    from src.models import AutonomousResponse
+    from src.whatsapp import sending
+
+    signals = outcome.signals
+    response = AutonomousResponse(
+        contact_id=contact.id,
+        inbound_message_id=inbound_message_id,
+        incoming=incoming,
+        response=reply,
+        decision=outcome.decision.value,
+        decision_reasons=list(outcome.reasons),
+        autonomy_mode=signals.effective_mode.value if signals else "",
+        action_type=signals.action if signals else "",
+        risk_level=signals.risk.level.value if signals else "",
+        risk_categories=list(signals.risk.categories) if signals else [],
+        communication_confidence=signals.communication_confidence if signals else 0.0,
+        model=getattr(routed, "model", ""),
+        provider=getattr(getattr(routed, "tier", None), "value", ""),
+        send_status="queued",
+    )
+    session.add(response)
+    await session.commit()
+
+    await sending.request_send(
+        session,
+        contact=contact,
+        body=reply,
+        origin="autonomous",
+        autonomous_response_id=response.id,
+        summary=f"Autonomous reply to {contact.name}: {reply[:120]}",
+    )
+    return response.id
 
 
 async def _prepare_draft(

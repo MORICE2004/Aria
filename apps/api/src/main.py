@@ -36,8 +36,32 @@ from src.routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup/shutdown hooks. Before serving requests: ensure DB tables exist."""
+    """Startup/shutdown hooks.
+
+    Before serving requests: ensure DB tables exist, then start the WhatsApp
+    queue drain. Starting the worker here is what makes restart recovery
+    automatic — messages left `pending` or abandoned mid-`processing` by the
+    previous process are picked up as soon as ARIA is back, with no manual step.
+    """
     await init_db()
+
+    settings = get_settings()
+    if settings.whatsapp_worker_enabled:
+        from src.db import SessionMaker
+        from src.llm import get_router
+        from src.whatsapp.worker import start_worker, stop_worker
+
+        start_worker(
+            SessionMaker,
+            get_router(),
+            poll_seconds=settings.whatsapp_worker_poll_seconds,
+        )
+        try:
+            yield
+        finally:
+            await stop_worker()
+        return
+
     yield
 
 configure_logging()

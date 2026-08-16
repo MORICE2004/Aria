@@ -1,116 +1,70 @@
-"""Autonomy resolution — what ARIA is allowed to do, for whom, right now.
+"""Autonomy helpers — contact lookup and mode summaries.
 
-Three inputs decide every question of permission:
+The POLICY used to live here. It now lives in `decision.py`, which evaluates
+the full signal set rather than the three inputs this module started with.
+What remains here is the small stuff that is genuinely about autonomy but is
+not policy: finding a contact, and describing the current mode in words.
 
-  1. The GLOBAL MODE      — how much autonomy MORICE has granted overall.
-  2. The CONTACT TRUST    — a per-person ceiling, independent of the global mode.
-  3. The EMERGENCY STOP   — overrides everything to OBSERVE.
-
-The effective permission is always the **most restrictive** of these. Raising
-the global mode can never widen what ARIA may do for an untrusted contact,
-and no setting survives the kill switch.
-
-This module is the single source of truth for that question. Nothing else in
-the codebase may decide "am I allowed to send" on its own.
+The names below are re-exported so callers do not need to know that the policy
+moved. There is still exactly ONE implementation — this module holds no copy
+of it, because two implementations of a permission check is how a system ends
+up enforcing the more permissive one by accident.
 """
 
 from __future__ import annotations
-
-from enum import Enum
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.models import AutonomyState, Contact
+from src.whatsapp.decision import (  # noqa: F401 — re-exported public surface
+    Decision,
+    Mode,
+    Outcome,
+    TrustLevel,
+    _TRUST_CEILING,
+    effective_mode,
+    evaluate,
+    get_state,
+    rank,
+)
 
-
-class Mode(str, Enum):
-    """Autonomy modes, ordered least to most permissive."""
-
-    OBSERVE = "observe"          # watch and learn; never respond
-    SUGGEST = "suggest"          # prepare drafts for review
-    SUPERVISED = "supervised"    # may send after explicit confirmation
-    TRUSTED = "trusted"          # may auto-handle defined low-risk messages
-    AUTONOMOUS = "autonomous"    # broad autonomy (requires readiness evidence)
-
-
-class TrustLevel(str, Enum):
-    NEVER_AUTONOMOUS = "never_autonomous"
-    UNKNOWN = "unknown"
-    LOW = "low"
-    TRUSTED = "trusted"
-    HIGH = "high"
-
-
-# Permissiveness ranking. Index = how much freedom the mode grants.
-_MODE_RANK: list[Mode] = [
-    Mode.OBSERVE,
-    Mode.SUGGEST,
-    Mode.SUPERVISED,
-    Mode.TRUSTED,
-    Mode.AUTONOMOUS,
-]
-
-# The highest mode each trust level permits, whatever the global mode says.
-_TRUST_CEILING: dict[TrustLevel, Mode] = {
-    # An unknown contact is only ever observed — ARIA does not draft for
-    # strangers, because a stranger is also the likeliest injection vector.
-    TrustLevel.UNKNOWN: Mode.OBSERVE,
-    TrustLevel.LOW: Mode.SUGGEST,
-    TrustLevel.TRUSTED: Mode.SUPERVISED,
-    TrustLevel.HIGH: Mode.TRUSTED,
-    # Explicit opt-out: drafts are fine, autonomy never is.
-    TrustLevel.NEVER_AUTONOMOUS: Mode.SUGGEST,
+# Human-readable descriptions, shown wherever a mode is selectable so the
+# choice is never made from the bare enum name.
+MODE_DESCRIPTIONS: dict[Mode, str] = {
+    Mode.OBSERVE: "ARIA reads and learns. She never responds.",
+    Mode.SUGGEST: "ARIA drafts replies for you to send. She never sends.",
+    Mode.SUPERVISED: "ARIA prepares each reply and asks you before sending.",
+    Mode.LIMITED_AUTONOMY: (
+        "ARIA automatically handles low-risk conversations with contacts you "
+        "have explicitly enabled. Everything else is escalated to you."
+    ),
+    Mode.FULL_AUTONOMY: (
+        "ARIA handles a broader range of conversations according to each "
+        "contact's policy. High-risk messages still come to you."
+    ),
 }
 
 
-def _rank(mode: Mode) -> int:
-    return _MODE_RANK.index(mode)
-
-
-def effective_mode(global_mode: Mode, trust: TrustLevel, *, emergency_stop: bool) -> Mode:
-    """The mode that actually applies for one contact.
-
-    Pure function — no I/O — so the policy is trivially testable, which
-    matters more here than anywhere else in ARIA.
-    """
-    if emergency_stop:
-        return Mode.OBSERVE
-    ceiling = _TRUST_CEILING[trust]
-    return global_mode if _rank(global_mode) <= _rank(ceiling) else ceiling
-
-
 def may_draft(mode: Mode) -> bool:
-    """Can ARIA prepare a draft for MORICE to read?"""
-    return _rank(mode) >= _rank(Mode.SUGGEST)
+    """Can ARIA prepare a draft at all? False only in observe mode."""
+    return rank(mode) >= rank(Mode.SUGGEST)
 
 
 def may_send_with_approval(mode: Mode) -> bool:
-    """Can an approved draft be sent (still via the Action Gateway)?"""
-    return _rank(mode) >= _rank(Mode.SUPERVISED)
+    """Can an approved reply be sent (still via the Action Gateway)?"""
+    return rank(mode) >= rank(Mode.SUPERVISED)
 
 
 def may_send_automatically(mode: Mode) -> bool:
-    """Can ARIA send a low-risk reply without a per-message click?
+    """Could this MODE ever permit an unattended send?
 
-    Even when true, the message still passes the Action Gateway and is
-    audited — 'automatic' means pre-authorised, never unlogged.
+    A ceiling check, not a permission. The actual question — may ARIA send
+    THIS reply to THIS person right now — is `decision.evaluate`, which also
+    weighs risk, contact policy, confidence and history. Never use this
+    function to gate a send.
     """
-    return _rank(mode) >= _rank(Mode.TRUSTED)
-
-
-async def get_state(session: AsyncSession) -> AutonomyState:
-    """Load the singleton autonomy row, creating it in OBSERVE if absent.
-
-    Defaulting to OBSERVE means a fresh install, or a wiped database, can
-    never come up in a sending mode.
-    """
-    state = await session.get(AutonomyState, "singleton")
-    if state is None:
-        state = AutonomyState(id="singleton", mode=Mode.OBSERVE.value)
-        session.add(state)
-        await session.commit()
-    return state
+    return rank(mode) >= rank(Mode.LIMITED_AUTONOMY)
 
 
 async def resolve_for_contact(
@@ -118,16 +72,22 @@ async def resolve_for_contact(
 ) -> tuple[Mode, str]:
     """Effective mode for a contact, plus a human-readable reason.
 
-    The reason is shown in the dashboard so MORICE can always see *why*
-    ARIA did or didn't act — an action explanation, not chain-of-thought.
+    The reason is shown in the dashboard so MORICE can always see *why* ARIA
+    did or didn't act — an action explanation, not chain-of-thought.
     """
-    state = await get_state(session)
-    global_mode = Mode(state.mode)
-    trust = TrustLevel(contact.trust_level)
+    state: AutonomyState = await get_state(session)
+    global_mode = Mode(state.mode) if _known(state.mode) else Mode.OBSERVE
+    trust = TrustLevel(contact.trust_level) if _known_trust(contact.trust_level) else TrustLevel.UNKNOWN
     mode = effective_mode(global_mode, trust, emergency_stop=state.emergency_stop)
 
     if state.emergency_stop:
-        reason = "emergency stop is active — observe only"
+        reason = "emergency stop is active - observe only"
+    elif state.paused:
+        reason = f"ARIA is paused (mode would be {mode.value})"
+    elif contact.paused:
+        reason = f"ARIA is paused for {contact.name}"
+    elif contact.taken_over:
+        reason = "you have taken over this conversation"
     elif mode is not global_mode:
         reason = (
             f"limited to {mode.value} by contact trust '{trust.value}' "
@@ -145,3 +105,11 @@ async def find_contact(
         select(Contact).where(Contact.handle == handle, Contact.channel == channel)
     )
     return result.scalar_one_or_none()
+
+
+def _known(value: str) -> bool:
+    return value in {m.value for m in Mode}
+
+
+def _known_trust(value: str) -> bool:
+    return value in {t.value for t in TrustLevel}

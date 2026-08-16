@@ -27,12 +27,31 @@ engine = create_async_engine(get_settings().database_url, echo=False)
 SessionMaker = async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def init_db() -> None:
-    """Create any missing tables at startup.
+# Columns added to tables that already existed in a live database.
+#
+# `create_all` creates missing TABLES but never alters existing ones, so a new
+# column on an existing table is invisible to it — the app starts fine and then
+# returns 500 on the first query that selects the column. That is exactly what
+# happened when the autonomy engine added `paused` to `autonomy_state`: the
+# tests passed (SQLite builds every table from scratch) and the live API broke.
+#
+# This is a stopgap, and deliberately a boring one: additive columns only, no
+# renames, no drops, no data migration. The moment a change needs more than
+# this, it needs Alembic instead — see docs/ARIA_CURRENT_STATE.md §15.
+_ADDED_COLUMNS: list[tuple[str, str, str]] = [
+    ("autonomy_state", "paused", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("autonomy_state", "autonomy_stopped", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("contacts", "autonomy_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("contacts", "allowed_actions", "JSON"),
+    ("contacts", "forbidden_actions", "JSON"),
+    ("contacts", "paused", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("contacts", "taken_over", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("contacts", "taken_over_at", "TIMESTAMPTZ"),
+]
 
-    Fine for a personal project at this stage; when the schema starts
-    evolving we will switch to real migrations (Alembic).
-    """
+
+async def init_db() -> None:
+    """Create missing tables, then add missing columns to existing ones."""
     from sqlalchemy import text
 
     from src import models  # noqa: F401  (import registers the tables on Base)
@@ -42,6 +61,16 @@ async def init_db() -> None:
             # Enable pgvector before creating tables that use vector columns.
             await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+
+        if conn.dialect.name == "postgresql":
+            # IF NOT EXISTS makes this idempotent, so it is safe on every boot.
+            for table, column, definition in _ADDED_COLUMNS:
+                await conn.execute(
+                    text(
+                        f"ALTER TABLE {table} "
+                        f"ADD COLUMN IF NOT EXISTS {column} {definition}"
+                    )
+                )
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

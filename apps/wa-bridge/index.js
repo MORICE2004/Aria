@@ -34,9 +34,12 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { makeDeliver } from "./deliver.js";
+import { Spool } from "./spool.js";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const AUTH_DIR = join(HERE, "auth");
-const POST_TIMEOUT_MS = 20000;
+const SPOOL_DIR = join(HERE, "spool");
 
 // ── config ────────────────────────────────────────────────────────────────
 function loadConfig() {
@@ -61,6 +64,8 @@ function loadConfig() {
 
 const cfg = loadConfig();
 const log = pino({ level: "warn" }); // Baileys is extremely chatty at info
+const spool = new Spool(SPOOL_DIR);
+const deliverToAria = makeDeliver(cfg);
 
 // ── message extraction ────────────────────────────────────────────────────
 
@@ -75,38 +80,6 @@ function extractText(message) {
     message.documentMessage?.caption ||
     ""
   ).trim();
-}
-
-/** Forward one message to ARIA. Never throws — ARIA being down must not kill
- *  the bridge, and a failure must be visible rather than silent. */
-async function forwardToAria({ handle, name, body, direction }) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
-  try {
-    const res = await fetch(cfg.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-ARIA-Ingest-Secret": cfg.secret,
-      },
-      body: JSON.stringify({ handle, name, body, direction }),
-      signal: controller.signal,
-    });
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}));
-      console.log(
-        `[bridge] → ARIA  ${direction}  ${name || handle}: ` +
-          `"${body.slice(0, 50)}${body.length > 50 ? "…" : ""}"` +
-          (data.effective_mode ? `  [${data.effective_mode}]` : ""),
-      );
-    } else {
-      console.warn(`[bridge] ARIA returned ${res.status} — message not stored`);
-    }
-  } catch (err) {
-    console.warn(`[bridge] forward failed: ${err?.message || err}`);
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 // ── connection ────────────────────────────────────────────────────────────
@@ -182,18 +155,41 @@ async function start() {
       // as something to reply to.
       const direction = msg.key?.fromMe ? "out" : "in";
 
-      await forwardToAria({
+      // Disk FIRST, network second. If this process died on the very next
+      // line, the message would still be delivered after a restart.
+      spool.enqueue({
+        dedupeKey: msg.key?.id || `${jid}-${msg.messageTimestamp}`,
         handle: jid,
         name: msg.pushName || "",
         body,
         direction,
+        timestamp: Number(msg.messageTimestamp) || null,
+        receivedAt: Date.now(),
       });
     }
+
+    // Nudge the drain so the common case (ARIA up) still feels immediate
+    // rather than waiting for the next backoff tick.
+    spool.drain(deliverToAria);
   });
 }
 
 console.log("\n  ARIA WhatsApp bridge (read-only)");
-console.log(`  forwarding to ${cfg.url}\n`);
+console.log(`  forwarding to ${cfg.url}`);
+
+// Drain anything left over from a previous run BEFORE connecting. Messages
+// buffered while ARIA was down are delivered on startup with no manual step —
+// that is the whole point of spooling them.
+const held = spool.counts();
+if (held.pending > 0 || held.dead > 0) {
+  console.log(
+    `  spool: ${held.pending} held message(s)` +
+      (held.dead > 0 ? `, ${held.dead} in dead/ needing attention` : ""),
+  );
+}
+spool.startAutoDrain(deliverToAria);
+console.log("");
+
 start().catch((err) => {
   console.error("[bridge] fatal:", err);
   process.exit(1);

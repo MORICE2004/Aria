@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     # than accepting messages from any local process.
     openclaw_ingest_secret: str = ""
 
+    # --- Inbound queue worker ---
+    # The background drain that retries messages whose processing failed and
+    # recovers anything left behind by a crash. Disabled in tests, which drive
+    # the queue explicitly so behaviour is deterministic rather than timed.
+    whatsapp_worker_enabled: bool = True
+    whatsapp_worker_poll_seconds: float = 2.0
+
     # --- Incoming email via IMAP (read-only inbox) ---
     # Gmail: imap.gmail.com, same address + App Password as SMTP.
     imap_host: str = ""

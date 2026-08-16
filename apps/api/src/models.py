@@ -214,6 +214,12 @@ class Contact(Base):
     `trust_level` caps what ARIA may ever do for this person, independently of
     the global autonomy mode. The effective permission is always the MORE
     RESTRICTIVE of the two — see src/whatsapp/autonomy.py.
+
+    Autonomy for a contact requires TWO separate switches: a trust level that
+    permits it, and `autonomy_enabled` set deliberately. Trust describes the
+    relationship; `autonomy_enabled` is the explicit grant. Keeping them apart
+    means raising trust — a natural thing to do as ARIA learns someone — can
+    never by itself start sending messages to them.
     """
 
     __tablename__ = "contacts"
@@ -228,6 +234,24 @@ class Contact(Base):
     # friend | colleague | boss | client | recruiter | family | academic | unknown
     relationship: Mapped[str] = mapped_column(String(30), default="unknown")
     notes: Mapped[str] = mapped_column(Text, default="")
+
+    # --- autonomy, per contact ---
+    # The explicit grant. Default false: no contact is autonomous by accident.
+    autonomy_enabled: Mapped[bool] = mapped_column(default=False)
+    # Action types ARIA may handle autonomously for this person, JSON list.
+    # Empty means "the conservative default", not "everything".
+    allowed_actions: Mapped[list] = mapped_column(JSON, default=list)
+    # Explicitly forbidden action types. Always wins over allowed_actions.
+    forbidden_actions: Mapped[list] = mapped_column(JSON, default=list)
+    # Per-contact off switch — silence ARIA for one person without touching
+    # anyone else, and without disabling her globally.
+    paused: Mapped[bool] = mapped_column(default=False)
+    # MORICE is handling this conversation himself right now. ARIA stays out
+    # until this is explicitly cleared.
+    taken_over: Mapped[bool] = mapped_column(default=False)
+    taken_over_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
@@ -247,6 +271,67 @@ class WhatsAppMessage(Base):
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     # True when this message came from the simulator rather than real WhatsApp.
     simulated: Mapped[bool] = mapped_column(default=False)
+
+
+class InboundMessage(Base):
+    """A received message, persisted BEFORE anything tries to understand it.
+
+    This table is the reason a WhatsApp message cannot be lost. The ingest
+    endpoint's only job is to durably write a row here and commit; every
+    expensive, failure-prone step (classification, drafting, deciding, sending)
+    happens afterwards and is retryable. If the API dies mid-processing, the
+    row is still `pending` or `processing` and is picked up again on restart.
+
+    `dedupe_key` is the WhatsApp message id. It carries a UNIQUE constraint,
+    which is what makes redelivery safe: the bridge may send the same message
+    any number of times, and the second insert is rejected by the database
+    rather than by hopeful application logic.
+
+    Status flow:
+        pending -> processing -> done
+                              -> pending (retry, with backoff)
+                              -> dead    (attempts exhausted; needs a human)
+    """
+
+    __tablename__ = "inbound_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    # Stable per-message identity from the transport. Unique: the whole point.
+    dedupe_key: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    channel: Mapped[str] = mapped_column(String(30), default="whatsapp")
+    handle: Mapped[str] = mapped_column(String(120), index=True)
+    name: Mapped[str] = mapped_column(String(200), default="")
+    body: Mapped[str] = mapped_column(Text)
+    direction: Mapped[str] = mapped_column(String(3), default="in")
+    simulated: Mapped[bool] = mapped_column(default=False)
+    # When the sender sent it (transport clock) vs when ARIA received it.
+    # Both are kept so a delayed message is recognisable as delayed.
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
+
+    # pending | processing | done | dead
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    # Earliest time a retry may run. Backoff is expressed as a timestamp rather
+    # than a sleep, so it survives a restart like everything else here.
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    # Set when a worker claims the row; used to reclaim rows abandoned by a
+    # process that died while holding them.
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    processed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Short human-readable outcome, e.g. "observed; decision=suggest".
+    outcome: Mapped[str] = mapped_column(String(300), default="")
 
 
 class ModelUsage(Base):
@@ -352,20 +437,139 @@ class LearningEvent(Base):
 
 
 class AutonomyState(Base):
-    """Singleton row holding ARIA's global autonomy mode and the kill switch.
+    """Singleton row holding ARIA's global autonomy mode and the stop controls.
 
     Exactly one row, id="singleton". Kept in the database (not memory) so the
     emergency stop survives a restart — a kill switch that forgets is not a
     kill switch.
+
+    Three separate stops, because they mean different things and MORICE will
+    want different ones at different moments:
+
+      `paused`         — ARIA stops acting but keeps observing and learning.
+                         The everyday "not now".
+      `autonomy_stopped` — no automatic sending; drafting and asking continue.
+                         The "keep helping, but check with me".
+      `emergency_stop` — everything outward stops and the mode drops to
+                         observe. The "stop, now".
     """
 
     __tablename__ = "autonomy_state"
 
     id: Mapped[str] = mapped_column(String(20), primary_key=True, default="singleton")
-    # observe | suggest | supervised | trusted | autonomous
+    # observe | suggest | supervised | limited_autonomy | full_autonomy
     mode: Mapped[str] = mapped_column(String(20), default="observe")
     emergency_stop: Mapped[bool] = mapped_column(default=False)
+    paused: Mapped[bool] = mapped_column(default=False)
+    autonomy_stopped: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AutonomousResponse(Base):
+    """One reply ARIA sent on her own, with everything needed to judge it later.
+
+    Recorded whether or not MORICE ever looks at it. The point is that an
+    autonomous action is never invisible: months later it must be possible to
+    ask "why did she send that?" and get a complete answer — which contact,
+    which policy, which model, how confident, how risky, and what happened
+    afterwards.
+
+    On the learning fields, note what is deliberately NOT here: any field
+    meaning "assumed correct because MORICE said nothing". Silence is not
+    approval. `user_reaction` stays "none" until he actually reacts, and the
+    learning code treats "none" as the absence of evidence rather than as
+    weak positive evidence.
+    """
+
+    __tablename__ = "autonomous_responses"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    contact_id: Mapped[str] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"), index=True
+    )
+    inbound_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    incoming: Mapped[str] = mapped_column(Text)
+    response: Mapped[str] = mapped_column(Text)
+
+    # --- why ARIA thought this was allowed ---
+    decision: Mapped[str] = mapped_column(String(20), index=True)  # auto_send|...
+    decision_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    autonomy_mode: Mapped[str] = mapped_column(String(30), default="")
+    action_type: Mapped[str] = mapped_column(String(30), default="")
+    risk_level: Mapped[str] = mapped_column(String(20), default="", index=True)
+    risk_categories: Mapped[list] = mapped_column(JSON, default=list)
+    communication_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    readiness_score: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # --- how it was produced ---
+    model: Mapped[str] = mapped_column(String(60), default="")
+    provider: Mapped[str] = mapped_column(String(30), default="")
+    estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # --- what happened to it ---
+    # queued | sent | failed | blocked
+    send_status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    send_error: Mapped[str] = mapped_column(Text, default="")
+    action_request_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+
+    # --- what MORICE thought, IF he said anything ---
+    # none | approved | corrected | rejected. "none" means no evidence, and is
+    # never interpreted as approval.
+    user_reaction: Mapped[str] = mapped_column(String(20), default="none", index=True)
+    correction: Mapped[str] = mapped_column(Text, default="")
+    reacted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Lessons this response generated, for the transparency view.
+    learning_event_ids: Mapped[list] = mapped_column(JSON, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
+
+
+class OutboundMessage(Base):
+    """A message approved for sending, waiting for the bridge to collect it.
+
+    ARIA's API never talks to WhatsApp directly. It writes a row here only
+    after the Action Gateway has executed an approved request, and a separate
+    sender process collects it. That indirection is deliberate: the process
+    holding the WhatsApp session has no reasoning in it and no ability to
+    decide anything, and the process that reasons has no socket to WhatsApp.
+    Neither one can send a message alone.
+
+    Collection re-checks the kill switch, so a message approved a minute ago
+    still cannot go out if MORICE has since pressed stop.
+    """
+
+    __tablename__ = "outbound_messages"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    contact_id: Mapped[str] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"), index=True
+    )
+    handle: Mapped[str] = mapped_column(String(120), index=True)
+    body: Mapped[str] = mapped_column(Text)
+    # Where it came from: autonomous | approved_draft | manual
+    origin: Mapped[str] = mapped_column(String(20), default="autonomous")
+    autonomous_response_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True
+    )
+    action_request_id: Mapped[str] = mapped_column(String(36), default="")
+    # pending | claimed | sent | failed | cancelled
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    claimed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
 
 
 class ActionRequest(Base):
