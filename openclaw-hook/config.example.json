@@ -1,0 +1,5 @@
+{
+  "url": "http://127.0.0.1:8000/whatsapp/ingest",
+  "secret": "<same value as OPENCLAW_INGEST_SECRET in ARIA's .env>",
+  "channels": ["whatsapp"]
+}

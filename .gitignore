@@ -29,3 +29,6 @@ data/
 
 # OpenClaw gateway token (secret)
 .openclaw_token
+
+# Hook config holds the ingest secret
+openclaw-hook/config.json
