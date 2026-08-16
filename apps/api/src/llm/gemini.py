@@ -8,7 +8,7 @@ needed), so ARIA can run at zero cost, with rate limits.
 import logging
 from collections.abc import AsyncIterator
 
-from src.llm.base import ChatMessage, LLMProvider
+from src.llm.base import ChatMessage, LLMProvider, Usage
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +57,10 @@ class GeminiProvider(LLMProvider):
             if chunk.usage_metadata:
                 usage = chunk.usage_metadata
         if usage:
+            self.last_usage = Usage(
+                input_tokens=usage.prompt_token_count or 0,
+                output_tokens=usage.candidates_token_count or 0,
+            )
             logger.info(
                 "Gemini call: %s input tokens, %s output tokens",
                 usage.prompt_token_count,

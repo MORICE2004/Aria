@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 
 from anthropic import AsyncAnthropic
 
-from src.llm.base import ChatMessage, LLMProvider
+from src.llm.base import ChatMessage, LLMProvider, Usage
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,10 @@ class ClaudeProvider(LLMProvider):
                 yield text
             # Log token usage so spend is always visible (cost tracking, Phase 1).
             final = await stream.get_final_message()
+            self.last_usage = Usage(
+                input_tokens=final.usage.input_tokens,
+                output_tokens=final.usage.output_tokens,
+            )
             logger.info(
                 "Claude call: %d input tokens, %d output tokens",
                 final.usage.input_tokens,

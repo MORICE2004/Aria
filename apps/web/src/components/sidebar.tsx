@@ -12,6 +12,7 @@ import {
   Briefcase,
   Brain,
   CalendarCheck,
+  Coins,
   GraduationCap,
   Home,
   MessageSquare,
@@ -35,6 +36,7 @@ const NAV_ITEMS: { label: string; href: string; icon: LucideIcon }[] = [
   { label: "Job Tracker", href: "/jobs", icon: Briefcase },
   { label: "Tasks", href: "/tasks", icon: CalendarCheck },
   { label: "Learning", href: "/learning", icon: GraduationCap },
+  { label: "Costs", href: "/costs", icon: Coins },
   { label: "Phone", href: "/connect", icon: Smartphone },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

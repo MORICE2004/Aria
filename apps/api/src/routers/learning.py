@@ -107,7 +107,7 @@ async def explain(
 ):
     # Teaching a beginner correctly is high-value: a wrong explanation is
     # worse than none, so this is REASON-class work.
-    routed = model_router.resolve(TaskClass.REASON)
+    routed = model_router.resolve(TaskClass.REASON, session)
     text = await learning.explain(
         routed.provider, session, concept=body.concept, context=body.context
     )
@@ -120,7 +120,7 @@ async def review(
     session: AsyncSession = Depends(get_session),
     model_router=Depends(get_router),
 ):
-    routed = model_router.resolve(TaskClass.REASON)
+    routed = model_router.resolve(TaskClass.REASON, session)
     text = await learning.review_code(
         routed.provider, session, code=body.code, question=body.question
     )
@@ -133,7 +133,7 @@ async def path(
     session: AsyncSession = Depends(get_session),
     model_router=Depends(get_router),
 ):
-    routed = model_router.resolve(TaskClass.REASON)
+    routed = model_router.resolve(TaskClass.REASON, session)
     return TextOut(
         text=await learning.learning_path(routed.provider, session, goal=body.goal)
     )

@@ -47,7 +47,7 @@ async def draft(
 ) -> TextOut:
     # Drafting a reply is CONVERSE-class: local by default, keeping the
     # conversation being replied to on this machine.
-    routed = model_router.resolve(TaskClass.CONVERSE)
+    routed = model_router.resolve(TaskClass.CONVERSE, session)
     text = await agent.draft_reply(
         routed.provider,
         memory,
@@ -67,14 +67,16 @@ class SummaryOut(BaseModel):
 
 @router.post("/summarize", response_model=SummaryOut)
 async def summarize(
-    body: SummarizeIn, model_router=Depends(get_router)
+    body: SummarizeIn,
+    model_router=Depends(get_router),
+    session: AsyncSession = Depends(get_session),
 ) -> SummaryOut:
     """Summarise a conversation.
 
     Routed as ROUTINE work: summarisation runs on a local model when one is
     available — free, and the conversation never leaves the machine.
     """
-    routed = model_router.resolve(TaskClass.ROUTINE)
+    routed = model_router.resolve(TaskClass.ROUTINE, session)
     text = await agent.summarize(routed.provider, conversation=body.conversation)
     return SummaryOut(text=text, ran_on=routed.description)
 

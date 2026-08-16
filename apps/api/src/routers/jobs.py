@@ -132,7 +132,7 @@ async def analyze_job(
         raise HTTPException(422, "Add the job description first, then analyze.")
     # Fit scoring must produce valid JSON and sound judgement — REASON-class,
     # so it goes to the cloud model rather than a small local one.
-    routed = model_router.resolve(TaskClass.REASON)
+    routed = model_router.resolve(TaskClass.REASON, session)
     job.match_score, job.match_notes = await jobsearch.analyze(
         routed.provider, memory, session, description=job.description
     )
@@ -152,7 +152,7 @@ async def draft_cover_letter(
     if not job.description.strip():
         raise HTTPException(422, "Add the job description first.")
     # A cover letter is high-stakes writing — worth the stronger model.
-    routed = model_router.resolve(TaskClass.REASON)
+    routed = model_router.resolve(TaskClass.REASON, session)
     job.cover_letter = await jobsearch.cover_letter(
         routed.provider, memory, session, description=job.description, extra=body.extra
     )
@@ -170,7 +170,7 @@ async def interview_prep(
     job = await _get_job(session, job_id)
     if not job.description.strip():
         raise HTTPException(422, "Add the job description first.")
-    routed = model_router.resolve(TaskClass.REASON)
+    routed = model_router.resolve(TaskClass.REASON, session)
     text = await jobsearch.interview_prep(
         routed.provider, memory, session, description=job.description
     )

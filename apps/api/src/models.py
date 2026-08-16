@@ -224,6 +224,30 @@ class WhatsAppMessage(Base):
     simulated: Mapped[bool] = mapped_column(default=False)
 
 
+class ModelUsage(Base):
+    """One LLM call: what ran where, and what it plausibly cost.
+
+    Token counts are FACTS reported by the provider. `estimated_cost_usd` is
+    exactly that — an estimate from a configurable price table, and it is
+    labelled as such everywhere it is shown. Local calls are 0.0, which is
+    the one cost figure that is certain.
+    """
+
+    __tablename__ = "model_usage"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    provider: Mapped[str] = mapped_column(String(30), index=True)  # ollama|gemini|...
+    model: Mapped[str] = mapped_column(String(60))
+    task_class: Mapped[str] = mapped_column(String(20), default="")  # routine|converse|reason
+    tier: Mapped[str] = mapped_column(String(20), default="")        # local_fast|cloud|...
+    input_tokens: Mapped[int] = mapped_column(default=0)
+    output_tokens: Mapped[int] = mapped_column(default=0)
+    estimated_cost_usd: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
+
+
 class MessageDraft(Base):
     """A reply ARIA prepared for MORICE to review.
 

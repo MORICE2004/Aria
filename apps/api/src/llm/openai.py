@@ -7,7 +7,7 @@ LLMProvider abstraction — a new vendor is one file and a config switch.
 import logging
 from collections.abc import AsyncIterator
 
-from src.llm.base import ChatMessage, LLMProvider
+from src.llm.base import ChatMessage, LLMProvider, Usage
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,10 @@ class OpenAIProvider(LLMProvider):
             if chunk.choices and chunk.choices[0].delta.content:
                 yield chunk.choices[0].delta.content
             if chunk.usage:  # final chunk carries token counts
+                self.last_usage = Usage(
+                    input_tokens=chunk.usage.prompt_tokens or 0,
+                    output_tokens=chunk.usage.completion_tokens or 0,
+                )
                 logger.info(
                     "OpenAI call: %d input tokens, %d output tokens",
                     chunk.usage.prompt_tokens,

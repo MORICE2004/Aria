@@ -70,14 +70,60 @@ class Routed:
         return f"ran {where} on {self.model}"
 
 
+class _UsageRecordingProvider(LLMProvider):
+    """Wraps a provider and records token usage once the stream finishes.
+
+    Done here rather than at each call site so accounting cannot be
+    forgotten when a new agent is added — the router is the one place every
+    model call already passes through.
+    """
+
+    def __init__(self, inner: LLMProvider, session, routed_info: tuple[str, str, str]):
+        self._inner = inner
+        self._session = session
+        self._provider_name, self._model, self._tier = routed_info
+
+    async def stream_chat(self, messages, system):
+        async for chunk in self._inner.stream_chat(messages, system=system):
+            yield chunk
+        self.last_usage = self._inner.last_usage
+
+        from src.llm import costs
+
+        await costs.record(
+            self._session,
+            provider=self._provider_name,
+            model=self._model,
+            tier=self._tier,
+            task_class="",
+            usage=self._inner.last_usage,
+        )
+
+
 class ModelRouter:
     """Resolves a TaskClass to a concrete provider, with fallback."""
 
     def __init__(self) -> None:
         self._settings = get_settings()
 
-    def resolve(self, task: TaskClass) -> Routed:
-        """Return the best available provider for this kind of work."""
+    def resolve(self, task: TaskClass, session=None) -> Routed:
+        """Return the best available provider for this kind of work.
+
+        Pass `session` to have usage recorded automatically when the reply
+        finishes streaming.
+        """
+        routed = self._resolve_uncounted(task)
+        if session is None:
+            return routed
+        provider_name = "ollama" if routed.tier.value.startswith("local") else (
+            get_settings().llm_provider
+        )
+        wrapped = _UsageRecordingProvider(
+            routed.provider, session, (provider_name, routed.model, routed.tier.value)
+        )
+        return Routed(provider=wrapped, tier=routed.tier, model=routed.model)
+
+    def _resolve_uncounted(self, task: TaskClass) -> Routed:
         attempted: list[str] = []
         for tier in self._preference_order(task):
             routed = self._build(tier)

@@ -135,7 +135,7 @@ async def send_message(
 
     # Conversation is CONVERSE-class work: local by default (free and private),
     # cloud if CONVERSE_LOCAL=false.
-    routed = model_router.resolve(TaskClass.CONVERSE)
+    routed = model_router.resolve(TaskClass.CONVERSE, session)
 
     async def stream():
         """Yield chunks to the browser; persist the full reply at the end."""

@@ -17,8 +17,24 @@ class ChatMessage:
     content: str
 
 
+@dataclass(frozen=True)
+class Usage:
+    """Token counts from one completed call. Facts, not estimates."""
+
+    input_tokens: int
+    output_tokens: int
+
+
 class LLMProvider(ABC):
-    """Contract all LLM adapters must fulfil."""
+    """Contract all LLM adapters must fulfil.
+
+    After `stream_chat` is fully consumed, adapters set `last_usage` so the
+    caller can record what the call actually cost. It is an attribute rather
+    than a return value because the method is a generator — and optional, so
+    an adapter that cannot report usage simply leaves it None.
+    """
+
+    last_usage: "Usage | None" = None
 
     @abstractmethod
     def stream_chat(

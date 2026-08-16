@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from src.llm.base import ChatMessage, LLMProvider
+from src.llm.base import ChatMessage, LLMProvider, Usage
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,10 @@ class OllamaProvider(LLMProvider):
                             # Final chunk carries token counts; log for cost parity
                             # with cloud providers (local cost is zero, but usage
                             # still tells us how much work ran where).
+                            self.last_usage = Usage(
+                                input_tokens=chunk.get("prompt_eval_count") or 0,
+                                output_tokens=chunk.get("eval_count") or 0,
+                            )
                             logger.info(
                                 "Ollama call (%s): %s input tokens, %s output tokens",
                                 self._model,

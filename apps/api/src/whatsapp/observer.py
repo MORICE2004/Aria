@@ -184,7 +184,7 @@ async def observe(
 
     # Classification is ROUTINE work: runs locally, so the message content
     # stays on this machine.
-    routed = model_router.resolve(TaskClass.ROUTINE)
+    routed = model_router.resolve(TaskClass.ROUTINE, session)
     raw = await _complete(routed.provider, _CLASSIFY_SYSTEM, _wrap_untrusted(body))
     classification = parse_classification(raw)
     if classification is None:
@@ -235,7 +235,7 @@ async def _prepare_draft(
 
     try:
         text = await comm_agent.draft_reply(
-            model_router.resolve(TaskClass.CONVERSE).provider,
+            model_router.resolve(TaskClass.CONVERSE, session).provider,
             get_memory_service(),
             session,
             platform="whatsapp",

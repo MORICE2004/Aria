@@ -394,7 +394,7 @@ def test_sensitive_message_is_not_drafted(client: TestClient) -> None:
                 yield "a draft that should never be produced"
 
     class SensitiveRouter:
-        def resolve(self, task):
+        def resolve(self, task, session=None):
             return Routed(
                 provider=SensitiveClassifierLLM(), tier=Tier.LOCAL_FAST, model="fake"
             )

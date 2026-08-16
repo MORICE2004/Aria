@@ -26,22 +26,38 @@ from src.memory.service import MemoryService
 
 
 class FakeLLM(LLMProvider):
-    """Predictable stand-in for Claude: echoes the last user message."""
+    """Predictable stand-in for a real model: echoes the last user message.
+
+    Reports token usage like a real provider so the cost-accounting path is
+    exercised by the suite rather than only in production.
+    """
 
     async def stream_chat(
         self, messages: list[ChatMessage], system: str
     ) -> AsyncIterator[str]:
         yield "Echo: "
         yield messages[-1].content
+        from src.llm.base import Usage
+
+        self.last_usage = Usage(input_tokens=10, output_tokens=5)
 
 
 class FakeRouter:
-    """Stand-in for ModelRouter: every task class resolves to FakeLLM."""
+    """Stand-in for ModelRouter: every task class resolves to FakeLLM.
 
-    def resolve(self, task):
-        from src.llm.router import Routed, Tier
+    Accepts the optional session argument the real router uses for usage
+    accounting, and records usage the same way so cost tests are meaningful.
+    """
 
-        return Routed(provider=FakeLLM(), tier=Tier.LOCAL_FAST, model="fake-model")
+    def resolve(self, task, session=None):
+        from src.llm.router import Routed, Tier, _UsageRecordingProvider
+
+        provider = FakeLLM()
+        if session is not None:
+            provider = _UsageRecordingProvider(
+                provider, session, ("fake", "fake-model", Tier.LOCAL_FAST.value)
+            )
+        return Routed(provider=provider, tier=Tier.LOCAL_FAST, model="fake-model")
 
 
 class FakeEmbedder(EmbeddingProvider):
