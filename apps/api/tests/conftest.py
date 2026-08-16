@@ -78,6 +78,27 @@ class FakeEmbedder(EmbeddingProvider):
         return vectors
 
 
+@pytest.fixture(autouse=True)
+def _fresh_rate_limits():
+    """Clear the rate limiters between tests.
+
+    They are module-level singletons holding per-caller counters, and every
+    test calls from the same address. Without this, the suite exhausts the
+    budget partway through and later tests fail with 429s that have nothing to
+    do with what they are testing.
+    """
+    from src.core import ratelimit
+
+    for limiter in (
+        ratelimit.api_limiter,
+        ratelimit.login_limiter,
+        ratelimit.ingest_limiter,
+    ):
+        limiter._hits.clear()
+    ratelimit.login_lockout._state.clear()
+    yield
+
+
 @pytest.fixture
 def client() -> TestClient:
     # StaticPool keeps ONE in-memory SQLite connection alive for the whole
@@ -137,6 +158,33 @@ def client() -> TestClient:
     finally:
         for module, original in originals.items():
             module.SessionMaker = original
+
+
+@pytest.fixture
+def auth_enabled(client: TestClient):
+    """Turn on ARIA's own login and hand the test client a real token.
+
+    Required by any test of autonomous SENDING: ARIA refuses to send
+    unattended when she has no password, because autonomy without access
+    control means anyone who can reach her can send messages as MORICE.
+
+    The token is genuine rather than a bypass, so these tests also exercise
+    the real authentication path instead of routing around it.
+    """
+    from src.core.config import get_settings
+    from src.core.security import create_token
+
+    settings = get_settings()
+    before_password = settings.aria_password
+    before_key = settings.secret_key
+    settings.aria_password = "test-password-long-enough"
+    settings.secret_key = "test-secret-key-that-is-long-enough-to-pass"
+
+    client.headers["Authorization"] = f"Bearer {create_token()}"
+    yield
+    client.headers.pop("Authorization", None)
+    settings.aria_password = before_password
+    settings.secret_key = before_key
 
 
 @pytest.fixture

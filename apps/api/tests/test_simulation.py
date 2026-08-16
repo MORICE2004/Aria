@@ -41,11 +41,15 @@ def _run(client: TestClient, coro_factory):
 
 
 @pytest.fixture
-def simulator(client: TestClient):
+def simulator(client: TestClient, auth_enabled):
     """A realistic ARIA: confident in MORICE's voice, with a cast of contacts.
 
     Mirrors his actual situation — a close friend cleared for autonomy, a
     colleague and a recruiter who are known but not autonomous, and strangers.
+
+    `auth_enabled` is required, not incidental: ARIA refuses to send
+    unattended when she has no password set, so a simulation without it would
+    only ever exercise the refusal path.
     """
 
     def _stage(session):

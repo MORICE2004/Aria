@@ -7,6 +7,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import { NotificationBell } from "@/components/notification-bell";
+import { SecurityBanner } from "@/components/security-banner";
 import { Sidebar } from "@/components/sidebar";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -30,7 +31,10 @@ export default function RootLayout({
       <body className="min-h-screen font-sans antialiased">
         <div className="flex min-h-screen">
           <Sidebar />
-          <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <SecurityBanner />
+            <main className="min-w-0 flex-1 p-4 md:p-8">{children}</main>
+          </div>
         </div>
         <NotificationBell />
       </body>

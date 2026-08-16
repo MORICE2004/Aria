@@ -21,7 +21,10 @@ def with_password():
 
 def test_auth_disabled_allows_requests(client: TestClient) -> None:
     assert client.get("/conversations").status_code == 200
-    assert client.get("/auth/status").json() == {"auth_enabled": False}
+    status = client.get("/auth/status").json()
+    assert status["auth_enabled"] is False
+    # An unprotected ARIA must not look identical to a protected one.
+    assert "Auth is disabled" in status["warning"]
 
 
 def test_protected_routes_require_token(client: TestClient, with_password) -> None:

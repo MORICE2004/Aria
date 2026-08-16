@@ -68,6 +68,35 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+async def rate_limit_middleware(request, call_next):
+    """Bound how fast any one caller can hit the API.
+
+    Deliberately generous and deliberately not applied to /auth/login, which
+    has its own much tighter limit plus lockout — a shared budget would let
+    someone exhaust the dashboard's polling allowance to mask a password
+    attack, or exhaust it by accident and lock MORICE out of his own UI.
+    """
+    from fastapi.responses import JSONResponse
+
+    from src.core.ratelimit import api_limiter, client_key, ingest_limiter
+
+    path = request.url.path
+    if path.startswith("/auth/login") or path in ("/health", "/docs", "/openapi.json"):
+        return await call_next(request)
+
+    # Ingest gets its own budget: after an outage the bridge delivers a whole
+    # spooled backlog at once, and that burst must not be mistaken for abuse.
+    limiter = ingest_limiter if path.startswith("/whatsapp/ingest") else api_limiter
+    allowed, retry_after = limiter.check(client_key(request))
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded"},
+            headers={"Retry-After": str(int(retry_after) or 1)},
+        )
+    return await call_next(request)
+
+
 def create_app() -> FastAPI:
     """Application factory.
 
@@ -76,6 +105,13 @@ def create_app() -> FastAPI:
     where middleware and routers are wired together.
     """
     settings = get_settings()
+
+    # Fails the boot rather than starting with security that only looks real.
+    # Warnings are logged loudly; an actively misleading configuration raises.
+    from src.core.security import check_startup_security
+
+    for warning in check_startup_security():
+        logger.warning("SECURITY: %s", warning)
 
     app = FastAPI(
         title="ARIA API",
@@ -89,6 +125,8 @@ def create_app() -> FastAPI:
     # addresses — so the phone can use ARIA over home Wi-Fi. Never "*", and
     # public origins stay blocked. (If exposing beyond the LAN, set
     # ARIA_PASSWORD and put a reverse proxy with HTTPS in front.)
+    app.middleware("http")(rate_limit_middleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],

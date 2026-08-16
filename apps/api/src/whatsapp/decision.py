@@ -41,6 +41,7 @@ from enum import Enum
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.models import AutonomousResponse, AutonomyState, Contact
 from src.whatsapp import risk as risk_module
 from src.whatsapp.risk import RiskAssessment, RiskLevel
@@ -139,6 +140,9 @@ class Signals:
     autonomy_stopped: bool
     contact_paused: bool
     taken_over: bool
+    # Whether ARIA's own API requires a login. Autonomy without access control
+    # means anyone who can reach ARIA can make her send messages as MORICE.
+    auth_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -263,6 +267,17 @@ def decide(signals: Signals) -> Outcome:
         return out(
             Decision.ASK_USER,
             "autonomous sending is stopped — ARIA will prepare and ask",
+        )
+
+    if not signals.auth_enabled:
+        # Autonomy plus no access control means anyone who can reach this API
+        # can make ARIA send WhatsApp messages as MORICE — and ARIA listens on
+        # the LAN so the phone can use her. Drafting without a login is a
+        # tolerable risk; sending without one is not.
+        return out(
+            Decision.ASK_USER,
+            "ARIA has no password set, so she will not send unattended — "
+            "set ARIA_PASSWORD in .env to enable autonomy",
         )
 
     if not signals.contact_autonomy_enabled:
@@ -449,6 +464,7 @@ async def evaluate(
         autonomy_stopped=state.autonomy_stopped,
         contact_paused=contact.paused,
         taken_over=contact.taken_over,
+        auth_enabled=bool(get_settings().aria_password),
     )
     return decide(signals)
 

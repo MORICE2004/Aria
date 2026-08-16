@@ -89,7 +89,7 @@ def _incoming(client: TestClient, body="hey, you around?", handle="john@s.whatsa
 # ---------- the happy path, and what it records ----------
 
 def test_a_permitted_low_risk_message_is_sent_autonomously(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     _ready_contact(client)
     _incoming(client, "hey")
@@ -110,7 +110,7 @@ def test_a_permitted_low_risk_message_is_sent_autonomously(
 
 
 def test_an_autonomous_send_still_goes_through_the_action_gateway(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     """The approval check was not removed — it was pre-authorised.
 
@@ -144,7 +144,7 @@ def test_an_autonomous_send_still_goes_through_the_action_gateway(
 
 
 def test_the_decision_and_its_reasons_are_recorded_for_later_scrutiny(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     _ready_contact(client)
     _incoming(client, "hey")
@@ -157,7 +157,7 @@ def test_the_decision_and_its_reasons_are_recorded_for_later_scrutiny(
 
 # ---------- the kill switch ----------
 
-def test_emergency_stop_cancels_messages_already_queued(client: TestClient) -> None:
+def test_emergency_stop_cancels_messages_already_queued(client: TestClient, auth_enabled) -> None:
     """The gap between deciding and sending is where a kill switch matters."""
     _ready_contact(client)
     _incoming(client, "hey")
@@ -171,7 +171,7 @@ def test_emergency_stop_cancels_messages_already_queued(client: TestClient) -> N
 
 
 def test_emergency_stop_prevents_the_sender_from_collecting_anything(
-    client: TestClient, ingest_secret
+    client: TestClient, ingest_secret, auth_enabled
 ) -> None:
     """Last line: even if a message survived, handover refuses it."""
     _ready_contact(client)
@@ -185,7 +185,7 @@ def test_emergency_stop_prevents_the_sender_from_collecting_anything(
     assert claimed["messages"] == []
 
 
-def test_no_new_autonomous_sends_while_stopped(client: TestClient) -> None:
+def test_no_new_autonomous_sends_while_stopped(client: TestClient, auth_enabled) -> None:
     _ready_contact(client)
     client.post("/whatsapp/emergency-stop")
 
@@ -194,7 +194,7 @@ def test_no_new_autonomous_sends_while_stopped(client: TestClient) -> None:
     assert client.get("/whatsapp/outbound").json() == []
 
 
-def test_pausing_aria_stops_sending_but_keeps_observing(client: TestClient) -> None:
+def test_pausing_aria_stops_sending_but_keeps_observing(client: TestClient, auth_enabled) -> None:
     contact_id = _ready_contact(client)
     client.post("/whatsapp/pause")
 
@@ -205,7 +205,7 @@ def test_pausing_aria_stops_sending_but_keeps_observing(client: TestClient) -> N
 
 
 def test_stop_autonomy_downgrades_to_asking_rather_than_silence(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     """"Keep helping, but check with me" — a different intent from "stop"."""
     _ready_contact(client)
@@ -217,7 +217,7 @@ def test_stop_autonomy_downgrades_to_asking_rather_than_silence(
     assert client.get("/whatsapp/drafts").json()
 
 
-def test_resuming_restores_the_previous_mode(client: TestClient) -> None:
+def test_resuming_restores_the_previous_mode(client: TestClient, auth_enabled) -> None:
     _ready_contact(client)
     client.post("/whatsapp/pause")
     resumed = client.post("/whatsapp/pause?resume=true").json()
@@ -228,7 +228,7 @@ def test_resuming_restores_the_previous_mode(client: TestClient) -> None:
 # ---------- per-contact controls ----------
 
 def test_pausing_one_contact_leaves_the_others_autonomous(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     john = _ready_contact(client, handle="john@s.whatsapp.net")
     mary = client.post(
@@ -255,7 +255,7 @@ def test_pausing_one_contact_leaves_the_others_autonomous(
 
 
 def test_taking_over_stops_aria_and_cancels_what_is_queued(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     contact_id = _ready_contact(client)
     _incoming(client, "hey")
@@ -272,7 +272,7 @@ def test_taking_over_stops_aria_and_cancels_what_is_queued(
 
 
 def test_aria_does_not_resume_a_taken_over_conversation_on_her_own(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     """Only an explicit release brings her back — no timeout, no judgement."""
     contact_id = _ready_contact(client)
@@ -290,7 +290,7 @@ def test_aria_does_not_resume_a_taken_over_conversation_on_her_own(
 # ---------- the execution-time re-check ----------
 
 def test_permission_withdrawn_after_approval_blocks_the_send(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     """A stale approval must fail closed.
 
@@ -341,7 +341,7 @@ def test_permission_withdrawn_after_approval_blocks_the_send(
 # ---------- delivery confirmation ----------
 
 def test_the_sender_claims_and_confirms_and_it_is_all_audited(
-    client: TestClient, ingest_secret
+    client: TestClient, ingest_secret, auth_enabled
 ) -> None:
     _ready_contact(client)
     _incoming(client, "hey")
@@ -363,7 +363,7 @@ def test_the_sender_claims_and_confirms_and_it_is_all_audited(
 
 
 def test_a_failed_send_is_recorded_not_silently_dropped(
-    client: TestClient, ingest_secret
+    client: TestClient, ingest_secret, auth_enabled
 ) -> None:
     _ready_contact(client)
     _incoming(client, "hey")
@@ -383,14 +383,14 @@ def test_a_failed_send_is_recorded_not_silently_dropped(
     assert "socket closed" in outbound["last_error"]
 
 
-def test_the_outbound_queue_requires_the_shared_secret(client: TestClient) -> None:
+def test_the_outbound_queue_requires_the_shared_secret(client: TestClient, auth_enabled) -> None:
     assert client.post("/whatsapp/outbound/claim").status_code in (401, 503)
 
 
 # ---------- learning from autonomous responses ----------
 
 def test_a_correction_teaches_and_counts_against_reliability(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     _ready_contact(client)
     _incoming(client, "hey")
@@ -413,7 +413,7 @@ def test_a_correction_teaches_and_counts_against_reliability(
     assert stored["correction"] == "yeah bro sawa, niko hapa"
 
 
-def test_silence_is_not_treated_as_approval(client: TestClient) -> None:
+def test_silence_is_not_treated_as_approval(client: TestClient, auth_enabled) -> None:
     """The rule the directive is explicit about.
 
     An unreviewed response must not count as a success — otherwise ARIA grows
@@ -440,7 +440,7 @@ def test_silence_is_not_treated_as_approval(client: TestClient) -> None:
 
 
 def test_an_explicit_approval_is_stronger_evidence_than_silence(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     _ready_contact(client)
     _incoming(client, "hey")
@@ -460,7 +460,7 @@ def test_an_explicit_approval_is_stronger_evidence_than_silence(
 
 
 def test_repeated_corrections_withdraw_autonomy_automatically(
-    client: TestClient,
+    client: TestClient, auth_enabled
 ) -> None:
     """Degrading on evidence is allowed; PROMOTING on evidence is not."""
     _ready_contact(client)
