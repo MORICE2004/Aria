@@ -50,10 +50,19 @@ const handler = async (event) => {
   const context = event.context || {};
   const channel = String(context.channelId || "");
 
-  // Only forward channels we were configured for.
-  if (cfg.channels.length && !cfg.channels.some((c) => channel.includes(c))) {
-    return;
+  // Forward everything by default. An earlier version filtered on
+  // channelId containing "whatsapp" and silently dropped every message,
+  // because the WhatsApp Web provider does not label itself that way.
+  // Filtering is now opt-in via config.channels, and a skip is logged so a
+  // dropped message is never invisible.
+  if (Array.isArray(cfg.channels) && cfg.channels.length > 0) {
+    const match = cfg.channels.some((c) => channel.toLowerCase().includes(String(c).toLowerCase()));
+    if (!match) {
+      console.warn(`[aria-bridge] skipping channelId="${channel}" (not in filter)`);
+      return;
+    }
   }
+  console.log(`[aria-bridge] forwarding message from channelId="${channel}"`);
 
   if (!cfg.secret) {
     console.warn("[aria-bridge] no secret configured — not forwarding");
