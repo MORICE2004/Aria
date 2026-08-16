@@ -4,7 +4,7 @@
 #   2. Run:  cd C:\Users\MORICE\projects\aria ;  .\allow-phone.ps1
 #
 # It opens the Windows Firewall for ports 3000 (dashboard) and 8000 (API)
-# on PRIVATE networks only (your home Wi-Fi) — not public networks.
+# on PRIVATE networks only (your home Wi-Fi) - not public networks.
 
 $rules = @(
   @{ Name = "ARIA dashboard (3000)"; Port = 3000 },
