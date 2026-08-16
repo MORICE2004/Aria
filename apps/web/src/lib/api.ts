@@ -109,7 +109,9 @@ export type Notifications = {
 export type WaAutonomy = {
   mode: string;
   emergency_stop: boolean;
-  available_modes: string[];
+  paused: boolean;
+  autonomy_stopped: boolean;
+  available_modes: { value: string; description: string }[];
 };
 export type WaContact = {
   id: string;
@@ -118,6 +120,11 @@ export type WaContact = {
   trust_level: string;
   relationship: string;
   notes: string;
+  autonomy_enabled: boolean;
+  allowed_actions: string[];
+  forbidden_actions: string[];
+  paused: boolean;
+  taken_over: boolean;
   effective_mode: string;
   mode_reason: string;
 };
@@ -161,6 +168,105 @@ export type WaDraft = {
   final: string;
   rationale: string;
   created_at: string;
+};
+
+/** Everything the Autonomous Activity page shows, from one call. */
+export type WaActivity = {
+  mode: string;
+  mode_description: string;
+  emergency_stop: boolean;
+  paused: boolean;
+  autonomy_stopped: boolean;
+  messages: {
+    received: number;
+    processed: number;
+    pending: number;
+    failed: number;
+    backlog_seconds: number;
+  };
+  autonomous: {
+    sent: number;
+    queued: number;
+    blocked: number;
+    awaiting_approval: number;
+    approved_by_user: number;
+    corrected_by_user: number;
+    unreviewed: number;
+  };
+  risk_breakdown: Record<string, number>;
+  models_used: Record<string, number>;
+  estimated_autonomous_cost_usd: number;
+  autonomous_contacts: {
+    id: string;
+    name: string;
+    handle: string;
+    trust_level: string;
+    allowed_actions: string[];
+    forbidden_actions: string[];
+    paused: boolean;
+    taken_over: boolean;
+    communication_confidence: number;
+    reviewed_responses: number;
+    correction_rate: number;
+  }[];
+  recent_learning: {
+    kind: string;
+    note: string;
+    draft: string;
+    final: string;
+    created_at: string;
+  }[];
+  errors: {
+    id: string;
+    handle: string;
+    body: string;
+    attempts: number;
+    last_error: string;
+    received_at: string;
+  }[];
+};
+
+export type WaAutonomousResponse = {
+  id: string;
+  contact_id: string;
+  contact_name: string;
+  incoming: string;
+  response: string;
+  decision: string;
+  decision_reasons: string[];
+  autonomy_mode: string;
+  action_type: string;
+  risk_level: string;
+  risk_categories: string[];
+  communication_confidence: number;
+  model: string;
+  estimated_cost_usd: number;
+  send_status: string;
+  send_error: string;
+  user_reaction: string;
+  correction: string;
+  created_at: string;
+};
+
+export type WaReadiness = {
+  advisory: string;
+  contacts: {
+    contact_id: string;
+    contact_name: string;
+    score: number;
+    factors: Record<string, number>;
+    notes: string[];
+    blocking: string[];
+  }[];
+};
+
+export type WaQueueStats = {
+  received: number;
+  pending: number;
+  processing: number;
+  done: number;
+  dead: number;
+  backlog_seconds: number;
 };
 
 export const api = {
@@ -213,6 +319,67 @@ export const api = {
     request<WaObservation>("/whatsapp/simulate", {
       method: "POST",
       body: JSON.stringify({ handle, name, body }),
+    }),
+
+  // --- autonomy: monitoring, control, and per-contact policy ---
+  waActivity: () => request<WaActivity>("/whatsapp/activity"),
+  waAutonomousResponses: () =>
+    request<WaAutonomousResponse[]>("/whatsapp/autonomous"),
+  waReactToResponse: (id: string, reaction: string, correction = "", note = "") =>
+    request<{ reaction: string; lessons: string[] }>(
+      `/whatsapp/autonomous/${id}/react`,
+      { method: "POST", body: JSON.stringify({ reaction, correction, note }) },
+    ),
+  waReadiness: () => request<WaReadiness>("/whatsapp/readiness"),
+  waQueue: () => request<WaQueueStats>("/whatsapp/queue"),
+  waRetryQueued: (id: string) =>
+    request<unknown>(`/whatsapp/queue/${id}/retry`, { method: "POST" }),
+
+  waPause: (resume = false) =>
+    request<WaAutonomy>(`/whatsapp/pause?resume=${resume}`, { method: "POST" }),
+  waStopAutonomy: (resume = false) =>
+    request<WaAutonomy>(`/whatsapp/stop-autonomy?resume=${resume}`, {
+      method: "POST",
+    }),
+  waTakeOver: (contactId: string, release = false) =>
+    request<WaContact>(
+      `/whatsapp/contacts/${contactId}/take-over?release=${release}`,
+      { method: "POST" },
+    ),
+  waPauseContact: (contactId: string, resume = false) =>
+    request<WaContact>(
+      `/whatsapp/contacts/${contactId}/pause?resume=${resume}`,
+      { method: "POST" },
+    ),
+  /** Per-contact autonomy policy: the "John may handle greetings" editor. */
+  waSetContactPolicy: (
+    contactId: string,
+    policy: {
+      autonomy_enabled?: boolean;
+      allowed_actions?: string[];
+      forbidden_actions?: string[];
+      trust_level?: string;
+    },
+  ) =>
+    request<WaContact>(`/whatsapp/contacts/${contactId}`, {
+      method: "PATCH",
+      body: JSON.stringify(policy),
+    }),
+  waEvaluate: (handle: string, body: string, proposed_reply = "") =>
+    request<{
+      decision: string;
+      reasons: string[];
+      action_type: string;
+      risk_level: string;
+      risk_categories: string[];
+      risk_reasons: string[];
+      injection_suspected: boolean;
+      effective_mode: string;
+      communication_confidence: number;
+      correction_rate: number;
+    }>("/whatsapp/evaluate", {
+      method: "POST",
+      body: JSON.stringify({ handle, body, proposed_reply }),
     }),
 
   getNotifications: () => request<Notifications>("/notifications"),

@@ -9,6 +9,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Activity,
   Briefcase,
   Brain,
   CalendarCheck,
@@ -33,6 +34,7 @@ const NAV_ITEMS: { label: string; href: string; icon: LucideIcon }[] = [
   { label: "Approvals", href: "/approvals", icon: ShieldCheck },
   { label: "Messages", href: "/messages", icon: Send },
   { label: "WhatsApp", href: "/whatsapp", icon: MessagesSquare },
+  { label: "Activity", href: "/activity", icon: Activity },
   { label: "Job Tracker", href: "/jobs", icon: Briefcase },
   { label: "Tasks", href: "/tasks", icon: CalendarCheck },
   { label: "Learning", href: "/learning", icon: GraduationCap },

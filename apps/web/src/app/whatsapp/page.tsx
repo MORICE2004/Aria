@@ -1,26 +1,56 @@
 /**
  * WhatsApp control center.
  *
- * Phase 8 = observe mode: ARIA watches and learns, and cannot send. The page
- * makes three things impossible to miss — the current autonomy level, the
- * emergency stop, and the per-contact trust that caps what ARIA may ever do.
+ * The page makes four things impossible to miss — the current autonomy level,
+ * the emergency stop, the per-contact trust that caps what ARIA may ever do,
+ * and (new) exactly which kinds of message each contact has been cleared for.
+ *
+ * The per-contact policy editor is deliberately explicit rather than a single
+ * "autonomous" switch: MORICE grants ARIA named categories for named people,
+ * so what she is allowed to do is always readable at a glance instead of
+ * inferred from a trust level.
  */
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { ShieldAlert, Eye } from "lucide-react";
-import { api, type WaObservation, type WaOverview } from "@/lib/api";
+import {
+  api,
+  type WaContact,
+  type WaObservation,
+  type WaOverview,
+} from "@/lib/api";
 import { DraftReview } from "@/components/draft-review";
 
-const MODES = ["observe", "suggest", "supervised", "trusted", "autonomous"] as const;
+const MODES = [
+  "observe",
+  "suggest",
+  "supervised",
+  "limited_autonomy",
+  "full_autonomy",
+] as const;
 const TRUST = ["unknown", "low", "trusted", "high", "never_autonomous"] as const;
+
+/** Categories a contact can be cleared for. Mirrors risk.ACTION_TYPES; the
+ *  sensitive ones are absent on purpose — they can never be autonomous, so
+ *  offering a checkbox for them would be a lie. */
+const GRANTABLE = [
+  "greeting",
+  "routine_reply",
+  "scheduling",
+  "status_update",
+  "documents",
+  "commitment",
+] as const;
 
 const MODE_BLURB: Record<string, string> = {
   observe: "Watches and learns. Never responds.",
   suggest: "Prepares drafts for your review.",
   supervised: "May send only after you confirm each message.",
-  trusted: "May auto-handle defined low-risk messages.",
-  autonomous: "Broad autonomy. Requires readiness evidence.",
+  limited_autonomy:
+    "Automatically handles low-risk conversations with contacts you have explicitly enabled.",
+  full_autonomy:
+    "Handles a broader range of conversations per each contact's policy. High-risk still comes to you.",
 };
 
 export default function WhatsAppPage() {
@@ -267,6 +297,8 @@ export default function WhatsAppPage() {
                 </button>
               ))}
             </div>
+
+            <ContactPolicy contact={c} onChange={refresh} onError={setError} />
           </li>
         ))}
         {data?.contacts.length === 0 && (
@@ -275,6 +307,136 @@ export default function WhatsAppPage() {
           </p>
         )}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Per-contact autonomy policy.
+ *
+ * Collapsed by default: most contacts will never be autonomous, and a wall of
+ * checkboxes on every row would make the ones that ARE autonomous harder to
+ * spot, not easier.
+ */
+function ContactPolicy({
+  contact,
+  onChange,
+  onError,
+}: {
+  contact: WaContact & { message_count?: number };
+  onChange: () => void;
+  onError: (message: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const allowed = contact.allowed_actions ?? [];
+
+  async function patch(policy: Parameters<typeof api.waSetContactPolicy>[1]) {
+    setBusy(true);
+    try {
+      await api.waSetContactPolicy(contact.id, policy);
+      onChange();
+    } catch (err) {
+      // Surfaces the API's refusal verbatim — e.g. "trust level does not
+      // permit autonomy". A rejected policy change must say why.
+      onError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggle(action: string) {
+    const next = allowed.includes(action)
+      ? allowed.filter((a) => a !== action)
+      : [...allowed, action];
+    patch({ allowed_actions: next });
+  }
+
+  return (
+    <div className="mt-3 border-t border-white/5 pt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="text-[11px] text-zinc-500 hover:text-zinc-300"
+      >
+        {open ? "Hide" : "Autonomy policy"}
+        {contact.autonomy_enabled && (
+          <span className="ml-2 rounded bg-cyan-500/15 px-1.5 py-0.5 text-[10px] text-cyan-300">
+            autonomous
+          </span>
+        )}
+        {contact.paused && (
+          <span className="ml-2 text-[10px] text-amber-300">paused</span>
+        )}
+        {contact.taken_over && (
+          <span className="ml-2 text-[10px] text-cyan-300">you took over</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-3">
+          <label className="flex items-center gap-2 text-xs text-zinc-300">
+            <input
+              type="checkbox"
+              disabled={busy}
+              checked={contact.autonomy_enabled}
+              onChange={(e) => patch({ autonomy_enabled: e.target.checked })}
+              className="accent-cyan-500"
+            />
+            ARIA may reply to {contact.name} without asking me
+          </label>
+
+          <div>
+            <p className="text-[11px] text-zinc-500">
+              Only for these kinds of message:
+            </p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {GRANTABLE.map((action) => (
+                <button
+                  key={action}
+                  disabled={busy}
+                  onClick={() => toggle(action)}
+                  className={`rounded px-2 py-0.5 text-[10px] ${
+                    allowed.includes(action)
+                      ? "bg-cyan-500/15 text-cyan-300"
+                      : "bg-white/5 text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {action.replace("_", " ")}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="rounded-lg bg-white/5 px-2 py-1.5 text-[10px] leading-relaxed text-zinc-500">
+            Never autonomous, for anyone, whatever is selected above: money,
+            employment, legal matters, sensitive personal information,
+            relationship-defining messages, and anything that reads as an
+            attempt to give ARIA instructions. Those always come to you.
+          </p>
+
+          <div className="flex gap-2">
+            <button
+              disabled={busy}
+              onClick={() =>
+                api.waPauseContact(contact.id, contact.paused).then(onChange)
+              }
+              className="rounded bg-white/5 px-2 py-1 text-[10px] hover:bg-white/10"
+            >
+              {contact.paused ? "Resume ARIA here" : "Pause ARIA here"}
+            </button>
+            <button
+              disabled={busy}
+              onClick={() =>
+                api.waTakeOver(contact.id, contact.taken_over).then(onChange)
+              }
+              className="rounded bg-white/5 px-2 py-1 text-[10px] hover:bg-white/10"
+            >
+              {contact.taken_over ? "Hand back to ARIA" : "Take over"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
