@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ShieldAlert, Eye } from "lucide-react";
 import { api, type WaObservation, type WaOverview } from "@/lib/api";
+import { DraftReview } from "@/components/draft-review";
 
 const MODES = ["observe", "suggest", "supervised", "trusted", "autonomous"] as const;
 const TRUST = ["unknown", "low", "trusted", "high", "never_autonomous"] as const;
@@ -150,6 +151,9 @@ export default function WhatsAppPage() {
           </p>
         )}
       </section>
+
+      {/* Drafts awaiting review */}
+      <DraftReview />
 
       {/* Simulator */}
       <section className="glass mb-6 rounded-xl p-5">

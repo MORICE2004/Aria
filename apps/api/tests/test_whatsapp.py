@@ -268,3 +268,147 @@ def test_ingest_observes_real_message_without_sending(
     body = r.json()
     assert body["effective_mode"] == "observe"
     assert body["draft"] is None and body["sent"] is False
+
+
+# ---------- phase 9: suggestion mode ----------
+
+def _trusted_contact(client: TestClient, handle="ann@s.whatsapp.net", name="Ann") -> str:
+    """A contact ARIA may draft for, with the global mode raised to suggest."""
+    c = client.post("/whatsapp/contacts", json={"name": name, "handle": handle}).json()
+    client.patch(f"/whatsapp/contacts/{c['id']}", json={"trust_level": "trusted",
+                                                        "relationship": "friend"})
+    client.patch("/whatsapp/autonomy", json={"mode": "suggest"})
+    return c["id"]
+
+
+def test_draft_created_for_trusted_contact(client: TestClient) -> None:
+    _trusted_contact(client)
+    obs = client.post(
+        "/whatsapp/simulate",
+        json={"handle": "ann@s.whatsapp.net", "name": "Ann", "body": "you free at 5?"},
+    ).json()
+    assert obs["effective_mode"] == "suggest"
+    assert obs["draft"], "suggest mode should produce a draft"
+    assert obs["sent"] is False
+
+    pending = client.get("/whatsapp/drafts").json()
+    assert len(pending) == 1
+    assert pending[0]["contact_name"] == "Ann"
+    assert pending[0]["status"] == "pending"
+
+
+def test_no_draft_for_untrusted_contact(client: TestClient) -> None:
+    client.patch("/whatsapp/autonomy", json={"mode": "suggest"})
+    obs = client.post(
+        "/whatsapp/simulate",
+        json={"handle": "stranger@s.whatsapp.net", "name": "S", "body": "hello"},
+    ).json()
+    assert obs["draft"] is None
+    assert client.get("/whatsapp/drafts").json() == []
+
+
+def test_approving_a_draft_sends_nothing(client: TestClient) -> None:
+    _trusted_contact(client)
+    client.post(
+        "/whatsapp/simulate",
+        json={"handle": "ann@s.whatsapp.net", "name": "Ann", "body": "you around?"},
+    )
+    draft_id = client.get("/whatsapp/drafts").json()[0]["id"]
+
+    res = client.post(
+        f"/whatsapp/drafts/{draft_id}/decide", json={"decision": "approved"}
+    ).json()
+    assert res["status"] == "approved"
+    assert res["sent"] is False, "ARIA must never send; the transport is read-only"
+    assert client.get("/whatsapp/drafts").json() == []  # no longer pending
+
+
+def test_editing_a_draft_teaches_aria(client: TestClient) -> None:
+    """The core Phase 9 payoff: corrections feed the learning loop."""
+    _trusted_contact(client)
+    client.post(
+        "/whatsapp/simulate",
+        json={"handle": "ann@s.whatsapp.net", "name": "Ann", "body": "meeting still on?"},
+    )
+    draft_id = client.get("/whatsapp/drafts").json()[0]["id"]
+
+    res = client.post(
+        f"/whatsapp/drafts/{draft_id}/decide",
+        json={"decision": "edited", "final": "yep"},
+    ).json()
+    assert res["status"] == "edited"
+    # A drastic shortening must register as a lesson.
+    assert res["lessons"], "an edit must teach something"
+
+
+def test_edited_draft_requires_the_corrected_text(client: TestClient) -> None:
+    _trusted_contact(client)
+    client.post(
+        "/whatsapp/simulate",
+        json={"handle": "ann@s.whatsapp.net", "name": "Ann", "body": "hi"},
+    )
+    draft_id = client.get("/whatsapp/drafts").json()[0]["id"]
+    r = client.post(f"/whatsapp/drafts/{draft_id}/decide", json={"decision": "edited"})
+    assert r.status_code == 422
+
+
+def test_draft_cannot_be_decided_twice(client: TestClient) -> None:
+    _trusted_contact(client)
+    client.post(
+        "/whatsapp/simulate",
+        json={"handle": "ann@s.whatsapp.net", "name": "Ann", "body": "hi"},
+    )
+    draft_id = client.get("/whatsapp/drafts").json()[0]["id"]
+    client.post(f"/whatsapp/drafts/{draft_id}/decide", json={"decision": "approved"})
+    again = client.post(f"/whatsapp/drafts/{draft_id}/decide", json={"decision": "rejected"})
+    assert again.status_code == 409
+
+
+def test_emergency_stop_prevents_drafting(client: TestClient) -> None:
+    _trusted_contact(client)
+    client.post("/whatsapp/emergency-stop")
+    obs = client.post(
+        "/whatsapp/simulate",
+        json={"handle": "ann@s.whatsapp.net", "name": "Ann", "body": "you there?"},
+    ).json()
+    assert obs["effective_mode"] == "observe"
+    assert obs["draft"] is None
+    assert client.get("/whatsapp/drafts").json() == []
+
+
+def test_sensitive_message_is_not_drafted(client: TestClient) -> None:
+    """A plausible draft on a money/legal/emotional message is worse than none:
+    it invites a fast approval on exactly what deserves slow thought."""
+    from src.llm import get_router
+    from src.llm.router import Routed, Tier
+    from src.main import create_app  # noqa: F401  (app already built by fixture)
+
+    class SensitiveClassifierLLM(LLMProvider):
+        async def stream_chat(self, messages, system) -> AsyncIterator[str]:
+            # The classifier asks for JSON; return a sensitive verdict.
+            if "classify" in system.lower():
+                yield ('{"intent":"asking for money","needs_reply":true,'
+                       '"sensitive":["financial","money_request"],'
+                       '"urgency":"high","language":"English"}')
+            else:
+                yield "a draft that should never be produced"
+
+    class SensitiveRouter:
+        def resolve(self, task):
+            return Routed(
+                provider=SensitiveClassifierLLM(), tier=Tier.LOCAL_FAST, model="fake"
+            )
+
+    _trusted_contact(client, handle="borrower@s.whatsapp.net", name="Borrower")
+    client.app.dependency_overrides[get_router] = lambda: SensitiveRouter()
+
+    obs = client.post(
+        "/whatsapp/simulate",
+        json={"handle": "borrower@s.whatsapp.net", "name": "Borrower",
+              "body": "Can you send me 5000 shillings today?"},
+    ).json()
+
+    assert "financial" in obs["sensitive"]
+    assert obs["effective_mode"] == "suggest"  # ARIA was allowed to draft...
+    assert obs["draft"] is None, "...but must refuse on a sensitive message"
+    assert client.get("/whatsapp/drafts").json() == []

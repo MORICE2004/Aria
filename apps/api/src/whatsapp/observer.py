@@ -193,9 +193,76 @@ async def observe(
     # THE GATE. In observe mode no draft is produced, full stop.
     draft = None
     if autonomy.may_draft(mode):
-        draft = "(drafting not implemented until Phase 9)"
+        draft = await _prepare_draft(
+            session, model_router, contact=contact, incoming=body,
+            classification=classification,
+        )
 
     return Observation(contact, message, mode, reason, classification, draft)
+
+
+async def _prepare_draft(
+    session: AsyncSession,
+    model_router,
+    *,
+    contact: Contact,
+    incoming: str,
+    classification: Classification | None,
+) -> str | None:
+    """Write a reply in MORICE's learned voice and store it for review.
+
+    Sensitive messages (money, contracts, legal, emotional...) are
+    deliberately NOT drafted. A plausible-sounding draft on a sensitive topic
+    is worse than none: it invites a fast approval on exactly the messages
+    that deserve slow thought.
+    """
+    from src.agents import communication as comm_agent
+    from src.memory import get_memory_service
+    from src.models import MessageDraft
+
+    if classification is not None and classification.is_sensitive:
+        logger.info(
+            "Skipping draft for %s: sensitive (%s)",
+            contact.handle, ", ".join(classification.sensitive),
+        )
+        return None
+
+    # Recent history gives the reply context; oldest-first reads naturally.
+    history = list(reversed(await recent_messages(session, contact.id, limit=8)))
+    transcript = "\n".join(
+        f"{'Me' if m.direction == 'out' else contact.name}: {m.body}" for m in history
+    )
+
+    try:
+        text = await comm_agent.draft_reply(
+            model_router.resolve(TaskClass.CONVERSE).provider,
+            get_memory_service(),
+            session,
+            platform="whatsapp",
+            conversation=transcript or f"{contact.name}: {incoming}",
+            instructions="reply naturally as MORICE would",
+            contact=contact,
+        )
+    except Exception as exc:  # noqa: BLE001 — a failed draft must not lose the message
+        logger.warning("Draft generation failed for %s: %s", contact.handle, exc)
+        return None
+
+    if not text:
+        return None
+
+    session.add(
+        MessageDraft(
+            contact_id=contact.id,
+            incoming=incoming,
+            draft=text,
+            rationale=(
+                f"{contact.relationship} contact; "
+                f"{classification.intent if classification else 'no classification'}"
+            )[:400],
+        )
+    )
+    await session.commit()
+    return text
 
 
 async def recent_messages(

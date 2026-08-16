@@ -35,6 +35,10 @@ _MAX_CONFIDENCE = 0.95
 # immediately — he said it, ARIA didn't infer it.
 _RULE_CONFIDENCE = 0.95
 
+# Must match StylePattern.dimension's column width. Postgres enforces it;
+# SQLite does not, so code must truncate rather than rely on tests catching it.
+MAX_DIMENSION_LEN = 120
+
 # Below this, a pattern is too weak to shape a draft.
 _USABLE_CONFIDENCE = 0.25
 
@@ -157,7 +161,9 @@ async def record_feedback(
             # shared "edit_preference" dimension made multiple lessons from
             # one edit overwrite each other, so nothing ever accumulated
             # evidence — a preference could never become confident.
-            dimension = f"edit:{lesson[:60]}"
+            # Hard-truncated to the column width. Postgres enforces this even
+            # though SQLite (used in tests) does not.
+            dimension = f"edit:{lesson}"[:MAX_DIMENSION_LEN]
             existing = (
                 await session.execute(
                     select(StylePattern).where(
@@ -193,7 +199,7 @@ async def add_rule(
     session.add(LearningEvent(kind="rule", note=rule, contact_id=contact_id))
     pattern = await _upsert_pattern(
         session,
-        dimension=f"rule:{rule[:30]}",
+        dimension=f"rule:{rule}"[:MAX_DIMENSION_LEN],
         scope=scope,
         value=rule,
         evidence_count=1,

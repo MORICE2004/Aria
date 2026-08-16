@@ -15,7 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.config import get_settings
 from src.db import get_session
 from src.llm import get_router
-from src.models import AuditEvent, Contact, WhatsAppMessage
+from src.communication import learning as comm_learning
+from src.models import AuditEvent, Contact, MessageDraft, WhatsAppMessage
 from src.whatsapp import autonomy, observer
 from src.whatsapp.autonomy import Mode, TrustLevel
 
@@ -347,6 +348,93 @@ async def ingest_message(
         language=c.language if c else None,
         draft=obs.draft,
     )
+
+
+class DraftOut(BaseModel):
+    id: str
+    contact_id: str
+    contact_name: str
+    incoming: str
+    draft: str
+    status: str
+    final: str
+    rationale: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DecideDraftIn(BaseModel):
+    # approved = "good, I'll send it myself"; edited = he rewrote it;
+    # rejected = wrong. ARIA cannot send in any case.
+    decision: str = Field(pattern="^(approved|edited|rejected)$")
+    final: str = Field(default="", max_length=20_000)
+    note: str = Field(default="", max_length=1_000)
+
+
+class DecideDraftOut(BaseModel):
+    status: str
+    lessons: list[str]
+    sent: bool = False  # always false: the transport is read-only
+
+
+@router.get("/drafts", response_model=list[DraftOut])
+async def list_drafts(
+    status: str = "pending", session: AsyncSession = Depends(get_session)
+):
+    """Drafts awaiting review."""
+    rows = await session.execute(
+        select(MessageDraft, Contact)
+        .join(Contact, Contact.id == MessageDraft.contact_id)
+        .where(MessageDraft.status == status)
+        .order_by(MessageDraft.created_at.desc())
+    )
+    return [
+        DraftOut(
+            id=d.id, contact_id=d.contact_id, contact_name=c.name,
+            incoming=d.incoming, draft=d.draft, status=d.status, final=d.final,
+            rationale=d.rationale, created_at=d.created_at,
+        )
+        for d, c in rows.all()
+    ]
+
+
+@router.post("/drafts/{draft_id}/decide", response_model=DecideDraftOut)
+async def decide_draft(
+    draft_id: str,
+    body: DecideDraftIn,
+    session: AsyncSession = Depends(get_session),
+):
+    """Approve, correct, or reject a draft — and learn from the outcome.
+
+    Nothing is sent. ARIA's WhatsApp transport is read-only; approving means
+    MORICE will send it himself. The value here is the learning signal.
+    """
+    draft = await session.get(MessageDraft, draft_id)
+    if draft is None:
+        raise HTTPException(404, "Draft not found")
+    if draft.status != "pending":
+        raise HTTPException(409, f"Draft already {draft.status}")
+
+    final_text = body.final.strip()
+    if body.decision == "edited" and not final_text:
+        raise HTTPException(422, "An edited draft needs the corrected text")
+
+    draft.status = body.decision
+    draft.final = final_text if body.decision == "edited" else (
+        draft.draft if body.decision == "approved" else ""
+    )
+    draft.decided_at = datetime.now(timezone.utc)
+
+    _, lessons = await comm_learning.record_feedback(
+        session,
+        kind=body.decision,
+        draft=draft.draft,
+        final=draft.final,
+        contact_id=draft.contact_id,
+        note=body.note,
+    )
+    return DecideDraftOut(status=draft.status, lessons=lessons)
 
 
 @router.get("/overview")

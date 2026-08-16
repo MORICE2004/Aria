@@ -4,7 +4,7 @@ Updated 2026-08-16. Keep this current after every significant phase.
 
 ## Current phase
 
-**ARIA 2.0 directive — Phases 0, 1, 3, 5, 7, 8 complete.**
+**ARIA 2.0 directive — Phases 0, 1, 3, 5, 7, 8, 9 complete.**
 Audit, stabilize, model router, communication learning, WhatsApp connection,
 and WhatsApp observe mode are all done and verified with real data.
 Remaining: 2 (architecture cleanup), 4 (typed memory), 6 (OpenClaw — now
@@ -16,7 +16,7 @@ ARIA 1.0 was audited and found healthy: 51 tests passing, no TODOs, no stubs,
 no broken features. The 2.0 work so far is **additive** — nothing was removed
 or rebuilt.
 
-**100 tests passing.** Frontend lint + build clean.
+**109 tests passing.** Frontend lint + build clean.
 
 ## Working features (verified this session)
 
@@ -152,11 +152,26 @@ block, preview-before-learning, and delete.
 Bug found+fixed: multiple lessons from one edit shared a key and overwrote
 each other, so evidence never accumulated. 100 tests passing.
 
+## Phase 9 - Suggestion mode COMPLETE (2026-08-16)
+
+ARIA drafts replies for trusted contacts in his learned voice; he approves,
+corrects, or rejects, and corrections feed the Phase 5 learning loop.
+Sensitive messages (money/legal/emotional/...) are deliberately NOT drafted.
+Nothing is ever sent - the transport is read-only.
+
+Verified live: draft "hey, tutaonana kesho" used his learned greeting and
+Kiswahili code-switching; correcting it to "yeah bro sawa, saa ngapi?" taught
+"prefers longer" and "prefers opening 'yeah' over 'hey'".
+
+Bug found+fixed: StylePattern.dimension was String(40) but edit-lesson keys
+exceed it. Postgres rejected the insert while SQLite tests passed silently
+(SQLite ignores VARCHAR limits). Column widened to 120, code truncates, live
+table migrated, and a length assertion added so the test no longer depends on
+which database it runs against.
+
 ## Next steps (in priority order)
 
-1. **Phase 9 — suggestion mode**: real drafts for trusted contacts, surfaced
-   in the approvals queue, feeding edits back into the learning loop.
-2. **Phase 4 — typed memory + governance** (working/episodic/preference/
+1. **Phase 4 — typed memory + governance** (working/episodic/preference/
    relationship/project), scoring, provenance, "why do you remember that?".
 3. **Cost/usage persistence** — `model_usage` table, surfaced on a Costs page.
 4. **Relationship-scoped style** — measure per relationship type, not just

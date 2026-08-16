@@ -224,6 +224,34 @@ class WhatsAppMessage(Base):
     simulated: Mapped[bool] = mapped_column(default=False)
 
 
+class MessageDraft(Base):
+    """A reply ARIA prepared for MORICE to review.
+
+    A draft is never a sent message. In suggestion mode "approved" means
+    "this is good, I will send it myself" — ARIA's WhatsApp transport is
+    read-only and has no send path at all.
+    """
+
+    __tablename__ = "message_drafts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    contact_id: Mapped[str] = mapped_column(
+        ForeignKey("contacts.id", ondelete="CASCADE"), index=True
+    )
+    # The inbound message this replies to, kept for context and audit.
+    incoming: Mapped[str] = mapped_column(Text)
+    draft: Mapped[str] = mapped_column(Text)
+    # pending | approved | edited | rejected
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    final: Mapped[str] = mapped_column(Text, default="")  # what he actually used
+    # Why ARIA thought this was appropriate — action explanation, not reasoning.
+    rationale: Mapped[str] = mapped_column(String(400), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
 class StylePattern(Base):
     """One learned fact about how MORICE writes.
 
@@ -239,8 +267,11 @@ class StylePattern(Base):
     __tablename__ = "style_patterns"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
-    # e.g. "avg_words", "greeting", "emoji_rate", "signoff", "formality"
-    dimension: Mapped[str] = mapped_column(String(40), index=True)
+    # e.g. "avg_words", "greeting", "emoji_rate", but also composite keys like
+    # "edit:prefers shorter: cut 17 words to 3" and "rule:<text>". Sized for
+    # those: 40 was too small and Postgres rejected the insert, while the
+    # SQLite test suite silently accepted it (SQLite ignores VARCHAR limits).
+    dimension: Mapped[str] = mapped_column(String(120), index=True)
     # "global" | "relationship:friend" | "contact:<id>"
     scope: Mapped[str] = mapped_column(String(60), index=True, default="global")
     value: Mapped[str] = mapped_column(Text)

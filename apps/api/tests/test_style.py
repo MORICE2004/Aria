@@ -201,3 +201,29 @@ def test_preview_lessons_does_not_record(client: TestClient) -> None:
     assert res["recorded"] is False and res["lessons"]
     # Nothing was stored.
     assert client.get("/style").json()["patterns"] == []
+
+
+def test_dimension_keys_fit_the_database_column(client: TestClient) -> None:
+    """Regression: SQLite ignores VARCHAR limits, Postgres does not.
+
+    A long edit-lesson produced a dimension key longer than the column and
+    Postgres rejected the insert at runtime while the test suite stayed
+    green. Assert the length explicitly so the check does not depend on
+    which database the tests happen to run against.
+    """
+    from src.communication.learning import MAX_DIMENSION_LEN
+
+    long_draft = (
+        "Good afternoon, I trust this correspondence finds you in excellent "
+        "health and high spirits on this most agreeable of days."
+    )
+    client.post(
+        "/style/feedback",
+        json={"kind": "edited", "draft": long_draft, "final": "yo"},
+    )
+    client.post("/style/rules", json={"rule": "x" * 400})
+
+    for p in client.get("/style").json()["patterns"]:
+        assert len(p["dimension"]) <= MAX_DIMENSION_LEN, (
+            f"dimension {p['dimension']!r} exceeds the column width"
+        )

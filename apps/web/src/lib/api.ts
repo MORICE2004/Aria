@@ -151,7 +151,26 @@ export type StylePattern = {
 };
 export type StyleProfile = { patterns: StylePattern[]; prompt_block: string };
 
+export type WaDraft = {
+  id: string;
+  contact_id: string;
+  contact_name: string;
+  incoming: string;
+  draft: string;
+  status: string;
+  final: string;
+  rationale: string;
+  created_at: string;
+};
+
 export const api = {
+  listDrafts: () => request<WaDraft[]>("/whatsapp/drafts"),
+  decideDraft: (id: string, decision: string, final = "") =>
+    request<{ status: string; lessons: string[]; sent: boolean }>(
+      `/whatsapp/drafts/${id}/decide`,
+      { method: "POST", body: JSON.stringify({ decision, final }) },
+    ),
+
   getStyleProfile: () => request<StyleProfile>("/style"),
   refreshStyle: () =>
     request<{ dimensions: Record<string, string>; sample_size: number }>(
