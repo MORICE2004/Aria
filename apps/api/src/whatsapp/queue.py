@@ -29,12 +29,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.clock import as_utc, now as _now
 from src.models import InboundMessage
 
 logger = logging.getLogger(__name__)
@@ -52,10 +53,6 @@ _BACKOFF_CAP_SECONDS = 300
 # After this long, any worker may reclaim it. Set well above the slowest
 # realistic processing time (a cloud model call plus a draft).
 STALE_CLAIM_SECONDS = 300
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 def backoff_delay(attempts: int) -> timedelta:
@@ -255,9 +252,7 @@ async def stats(session: AsyncSession) -> dict:
 
     # SQLite (tests) drops the timezone on the way back out, so an aggregate
     # can return a naive datetime where Postgres returns an aware one.
-    # Subtracting the two kinds raises, so normalise before doing arithmetic.
-    if oldest is not None and oldest.tzinfo is None:
-        oldest = oldest.replace(tzinfo=timezone.utc)
+    oldest = as_utc(oldest)
 
     return {
         "received": sum(counts.values()),

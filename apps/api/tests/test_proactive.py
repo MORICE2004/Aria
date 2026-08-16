@@ -439,3 +439,70 @@ async def test_scheduler_survives_a_failing_run() -> None:
 
     assert calls["n"] >= 2, "the loop did not survive the first failure"
     assert scheduler.runs >= 2
+
+
+# ---------- career and learning ----------
+
+def test_an_imminent_interview_is_raised(client: TestClient) -> None:
+    """The one career event worth interrupting for: preparation has to happen
+    before it, not after."""
+    _stage(
+        client,
+        Task(
+            title="Interview with Acme",
+            kind="interview",
+            status="open",
+            due_at=_now() + timedelta(hours=20),
+        ),
+    )
+    insights = _check(client)
+    assert any("Interview in" in i["title"] for i in insights)
+
+
+def test_a_distant_interview_is_not_raised_yet(client: TestClient) -> None:
+    """Reminding someone about next month's interview today is noise."""
+    _stage(
+        client,
+        Task(
+            title="Interview with Acme",
+            kind="interview",
+            status="open",
+            due_at=_now() + timedelta(days=10),
+        ),
+    )
+    assert not any("Interview in" in i["title"] for i in _check(client))
+
+
+def test_stale_applications_are_grouped(client: TestClient) -> None:
+    from src.models import JobApplication
+
+    _stage(
+        client,
+        *[
+            JobApplication(
+                company=f"Company {i}",
+                role="Backend Developer",
+                status="applied",
+                created_at=_now() - timedelta(days=40),
+            )
+            for i in range(4)
+        ],
+    )
+    stale = [i for i in _check(client) if "no update in 3 weeks" in i["title"]]
+    assert len(stale) == 1
+    assert "4 application(s)" in stale[0]["title"]
+
+
+def test_neglected_learning_is_mentioned_gently(client: TestClient) -> None:
+    """An assistant that nags about self-improvement is one you mute."""
+    from src.models import LearningTopic
+
+    _stage(
+        client,
+        LearningTopic(
+            name="Rust", status="learning", created_at=_now() - timedelta(days=60)
+        ),
+    )
+    topics = [i for i in _check(client) if "topic(s)" in i["title"]]
+    assert len(topics) == 1
+    assert topics[0]["severity"] == Severity.FYI.value

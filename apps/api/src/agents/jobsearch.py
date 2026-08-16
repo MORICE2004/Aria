@@ -60,17 +60,52 @@ async def _run(llm: LLMProvider, system: str, user_content: str) -> str:
 
 
 async def _profile_block(memory: MemoryService, session) -> str:
+    """Everything ARIA knows about MORICE professionally.
+
+    Draws on semantic memory AND uploaded documents. Before document
+    intelligence existed, an uploaded CV was only reachable through whichever
+    chunks semantic search happened to surface — so a job analysis could miss
+    the CV sitting right there. A document whose name says "CV" or "resume" is
+    included whole, because for this job the CV is the profile.
+    """
+    parts: list[str] = []
+
+    cv = await _cv_document(session)
+    if cv is not None:
+        parts.append(f"[{cv.filename} — uploaded CV]\n{cv.content[:6000]}")
+
     hits = await memory.search(
         session, "CV resume skills experience projects education goals", k=6
     )
-    if not hits:
+    parts.extend(f"[{h.title}] {h.content}" for h in hits)
+
+    if not parts:
         return (
             "PROFILE: (empty — MORICE has not added his CV/skills to memory yet; "
             "say so and keep the analysis generic)"
         )
-    return "MORICE'S PROFILE (from his memory):\n" + "\n---\n".join(
-        f"[{h.title}] {h.content}" for h in hits
+    return "MORICE'S PROFILE (from his memory and documents):\n" + "\n---\n".join(parts)
+
+
+async def _cv_document(session):
+    """The most recently uploaded document that looks like a CV, if any."""
+    from sqlalchemy import or_, select
+
+    from src.models import Document
+
+    result = await session.execute(
+        select(Document)
+        .where(
+            or_(
+                Document.filename.ilike("%cv%"),
+                Document.filename.ilike("%resume%"),
+                Document.filename.ilike("%curriculum%"),
+            )
+        )
+        .order_by(Document.created_at.desc())
+        .limit(1)
     )
+    return result.scalar_one_or_none()
 
 
 def _job_block(description: str) -> str:

@@ -15,11 +15,13 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from enum import Enum
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.core.clock import as_utc, now as _now, seconds_since, seconds_until
 
 from src.models import (
     ActionRequest,
@@ -76,10 +78,6 @@ def register_check(name: str) -> Callable[[Check], Check]:
         return func
 
     return decorator
-
-
-def _now() -> datetime:
-    return datetime.now(timezone.utc)
 
 
 # --- The checks -----------------------------------------------------------
@@ -139,10 +137,8 @@ async def check_backlog(session: AsyncSession) -> list[Insight]:
     ).scalar_one_or_none()
     if oldest is None:
         return []
-    if oldest.tzinfo is None:
-        oldest = oldest.replace(tzinfo=timezone.utc)
 
-    waiting = (_now() - oldest).total_seconds()
+    waiting = seconds_since(oldest)
     if waiting < 20 * 60:
         return []
 
@@ -378,6 +374,122 @@ async def check_autonomy_drift(session: AsyncSession) -> list[Insight]:
     return insights
 
 
+@register_check("upcoming_interviews")
+async def check_upcoming_interviews(session: AsyncSession) -> list[Insight]:
+    """An interview in the next 48 hours.
+
+    The one career event where a reminder is worth interrupting for, because
+    preparation has to happen before it, not after.
+    """
+    soon = _now() + timedelta(hours=48)
+    interviews = list(
+        (
+            await session.execute(
+                select(Task)
+                .where(
+                    Task.kind == "interview",
+                    Task.status == "open",
+                    Task.due_at > _now(),
+                    Task.due_at < soon,
+                )
+                .order_by(Task.due_at)
+            )
+        ).scalars()
+    )
+
+    insights: list[Insight] = []
+    for interview in interviews:
+        hours = int(seconds_until(interview.due_at) // 3600)
+        insights.append(
+            Insight(
+                key=f"interview:{interview.id}",
+                severity=Severity.ATTENTION,
+                title=f"Interview in {hours} hours: {interview.title}",
+                detail="ARIA can prepare likely questions from the job description.",
+                link="/jobs",
+                action="Run interview prep on the Jobs page.",
+            )
+        )
+    return insights
+
+
+@register_check("stale_applications")
+async def check_stale_applications(session: AsyncSession) -> list[Insight]:
+    """Applications sent weeks ago with no movement.
+
+    Grouped into one insight: a separate notification per application would be
+    the fastest way to make MORICE stop reading them.
+    """
+    from src.models import JobApplication
+
+    cutoff = _now() - timedelta(days=21)
+    stale = list(
+        (
+            await session.execute(
+                select(JobApplication)
+                .where(
+                    JobApplication.status == "applied",
+                    JobApplication.created_at < cutoff,
+                )
+                .order_by(JobApplication.created_at)
+            )
+        ).scalars()
+    )
+    if not stale:
+        return []
+
+    names = ", ".join(f"{a.company} ({a.role})" for a in stale[:3])
+    more = f" and {len(stale) - 3} more" if len(stale) > 3 else ""
+    return [
+        Insight(
+            key="jobs:stale",
+            severity=Severity.FYI,
+            title=f"{len(stale)} application(s) have had no update in 3 weeks",
+            detail=f"{names}{more}",
+            link="/jobs",
+            action="Follow up, or mark them rejected so they stop counting.",
+        )
+    ]
+
+
+@register_check("neglected_learning")
+async def check_neglected_learning(session: AsyncSession) -> list[Insight]:
+    """Something MORICE started learning and stopped.
+
+    Deliberately gentle (FYI) and deliberately one insight for all of them.
+    An assistant that nags about self-improvement is one you mute.
+    """
+    from src.models import LearningTopic
+
+    cutoff = _now() - timedelta(days=30)
+    neglected = list(
+        (
+            await session.execute(
+                select(LearningTopic)
+                .where(
+                    LearningTopic.status == "learning",
+                    LearningTopic.created_at < cutoff,
+                )
+                .order_by(LearningTopic.created_at)
+            )
+        ).scalars()
+    )
+    if not neglected:
+        return []
+
+    names = ", ".join(t.name for t in neglected[:3])
+    return [
+        Insight(
+            key="learning:neglected",
+            severity=Severity.FYI,
+            title=f"{len(neglected)} topic(s) have been 'learning' for a month",
+            detail=names,
+            link="/learning",
+            action="Pick one back up, or mark it comfortable if you got there.",
+        )
+    ]
+
+
 # --- The engine -----------------------------------------------------------
 
 class ProactiveEngine:
@@ -435,9 +547,7 @@ class ProactiveEngine:
                 existing.last_seen_at = _now()
                 return None
 
-            dismissed_at = existing.dismissed_at or existing.created_at
-            if dismissed_at.tzinfo is None:
-                dismissed_at = dismissed_at.replace(tzinfo=timezone.utc)
+            dismissed_at = as_utc(existing.dismissed_at or existing.created_at)
             if _now() - dismissed_at < self.cooldown:
                 return None  # dismissed recently; respect that
 
