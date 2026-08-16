@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
 
+    # --- OpenClaw bridge (WhatsApp ingest) ---
+    # Shared secret OpenClaw must present on the ingest webhook. Empty =
+    # ingest disabled, so a misconfigured deployment fails closed rather
+    # than accepting messages from any local process.
+    openclaw_ingest_secret: str = ""
+
     # --- Incoming email via IMAP (read-only inbox) ---
     # Gmail: imap.gmail.com, same address + App Password as SMTP.
     imap_host: str = ""

@@ -26,3 +26,6 @@ Thumbs.db
 # Logs and local data
 *.log
 data/
+
+# OpenClaw gateway token (secret)
+.openclaw_token

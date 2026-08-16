@@ -86,6 +86,8 @@ def create_app() -> FastAPI:
     app.include_router(learning.router, dependencies=protected)
     app.include_router(notifications.router, dependencies=protected)
     app.include_router(whatsapp.router, dependencies=protected)
+    # Secret-authenticated, called by the local OpenClaw gateway — not JWT.
+    app.include_router(whatsapp.ingest_router)
 
     logger.info("ARIA API started (env=%s)", settings.app_env)
     return app

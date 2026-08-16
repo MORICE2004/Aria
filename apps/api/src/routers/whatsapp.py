@@ -4,13 +4,15 @@ Phase 8: observe mode. Nothing here can send a message; there is no send
 path in this module at all.
 """
 
+import secrets
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.config import get_settings
 from src.db import get_session
 from src.llm import get_router
 from src.models import AuditEvent, Contact, WhatsAppMessage
@@ -18,6 +20,12 @@ from src.whatsapp import autonomy, observer
 from src.whatsapp.autonomy import Mode, TrustLevel
 
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
+
+# Ingest lives on its own router, registered WITHOUT the dashboard JWT
+# dependency: the caller is the local OpenClaw gateway, not a browser, and it
+# authenticates with a shared secret instead. Without this split, turning on
+# ARIA_PASSWORD would silently break message ingest.
+ingest_router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 
 # ---------- shapes ----------
@@ -261,6 +269,70 @@ async def simulate_message(
         body=body.body,
         direction=body.direction,
         simulated=True,
+    )
+    c = obs.classification
+    return ObservationOut(
+        contact=await _to_contact_out(session, obs.contact),
+        stored_message_id=obs.message.id,
+        effective_mode=obs.mode.value,
+        mode_reason=obs.mode_reason,
+        intent=c.intent if c else None,
+        needs_reply=c.needs_reply if c else None,
+        sensitive=c.sensitive if c else [],
+        urgency=c.urgency if c else None,
+        language=c.language if c else None,
+        draft=obs.draft,
+    )
+
+
+class IngestIn(BaseModel):
+    """Inbound message pushed by OpenClaw.
+
+    Field names mirror OpenClaw's webhook payload loosely; only what ARIA
+    needs is accepted, and anything else is ignored rather than trusted.
+    """
+
+    handle: str = Field(min_length=1, max_length=120)
+    name: str = Field(default="", max_length=200)
+    body: str = Field(min_length=1, max_length=20_000)
+    direction: str = Field(default="in", pattern="^(in|out)$")
+
+
+@ingest_router.post("/ingest", response_model=ObservationOut, status_code=201)
+async def ingest_message(
+    body: IngestIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    model_router=Depends(get_router),
+):
+    """Receive a real WhatsApp message from the OpenClaw gateway.
+
+    Authenticated by a shared secret rather than the dashboard JWT, because
+    the caller is a local service, not a browser. Fails closed: if no secret
+    is configured, ingest is refused outright.
+
+    This endpoint OBSERVES. It cannot reply — the observer enforces the
+    autonomy gate, and no send path exists in this module.
+    """
+    expected = get_settings().openclaw_ingest_secret
+    if not expected:
+        raise HTTPException(
+            503,
+            "Ingest is disabled. Set OPENCLAW_INGEST_SECRET in .env and "
+            "configure the same value in OpenClaw's webhook.",
+        )
+    presented = request.headers.get("X-ARIA-Ingest-Secret", "")
+    if not secrets.compare_digest(presented, expected):
+        raise HTTPException(401, "Bad ingest secret")
+
+    obs = await observer.observe(
+        session,
+        model_router,
+        handle=body.handle,
+        name=body.name,
+        body=body.body,
+        direction=body.direction,
+        simulated=False,  # real traffic
     )
     c = obs.classification
     return ObservationOut(

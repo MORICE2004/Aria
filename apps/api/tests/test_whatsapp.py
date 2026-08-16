@@ -211,3 +211,48 @@ def test_overview_reports_channel_not_linked(client: TestClient) -> None:
     assert body["channel_linked"] is False  # honest: no real WhatsApp yet
     assert body["mode"] == "observe"
     assert body["contacts"][0]["message_count"] == 1
+
+
+# ---------- ingest webhook (OpenClaw bridge) ----------
+
+@pytest.fixture
+def ingest_secret():
+    """Enable ingest with a known secret for one test."""
+    from src.core.config import get_settings
+
+    s = get_settings()
+    before = s.openclaw_ingest_secret
+    s.openclaw_ingest_secret = "test-secret"
+    yield "test-secret"
+    s.openclaw_ingest_secret = before
+
+
+def test_ingest_disabled_by_default(client: TestClient) -> None:
+    """Fails closed: no secret configured means no ingest."""
+    r = client.post(
+        "/whatsapp/ingest", json={"handle": "x@s.whatsapp.net", "body": "hi"}
+    )
+    assert r.status_code == 503
+
+
+def test_ingest_rejects_wrong_secret(client: TestClient, ingest_secret) -> None:
+    r = client.post(
+        "/whatsapp/ingest",
+        json={"handle": "x@s.whatsapp.net", "body": "hi"},
+        headers={"X-ARIA-Ingest-Secret": "wrong"},
+    )
+    assert r.status_code == 401
+
+
+def test_ingest_observes_real_message_without_sending(
+    client: TestClient, ingest_secret
+) -> None:
+    r = client.post(
+        "/whatsapp/ingest",
+        json={"handle": "49111@s.whatsapp.net", "name": "Ann", "body": "you around?"},
+        headers={"X-ARIA-Ingest-Secret": ingest_secret},
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["effective_mode"] == "observe"
+    assert body["draft"] is None and body["sent"] is False
