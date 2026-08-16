@@ -19,6 +19,10 @@ google-genai~=1.2        # official Gemini SDK — used ONLY inside src/llm/gemi
 pgvector~=0.3            # SQLAlchemy support for the pgvector column type
 fastembed~=0.5           # local CPU embeddings — free, private, no extra API key
 
+# Documents
+pypdf>=5,<7             # PDF text extraction - pure Python, no system deps
+python-multipart~=0.0.20 # multipart parsing, required by FastAPI for file uploads
+
 # Auth + email (Phase 4)
 pyjwt~=2.10              # signs/verifies login tokens (JWT)
 qrcode>=8,<9             # renders the phone-access QR locally (no external service)

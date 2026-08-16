@@ -63,17 +63,26 @@ class FakeRouter:
 class FakeEmbedder(EmbeddingProvider):
     """Deterministic embeddings based on word overlap — no model download.
 
-    Each word deterministically lights up a few vector positions, so texts
-    sharing words get similar vectors. Crude, but it makes similarity search
-    testable and fully predictable.
+    Each word deterministically lights up a vector position, so texts sharing
+    words get similar vectors. Crude, but it makes similarity search testable
+    and fully predictable.
+
+    Uses crc32 rather than the builtin `hash()`. Python randomises string
+    hashing per process (PYTHONHASHSEED), so `hash()` put words in different
+    vector slots on every run: collisions varied, similarity scores varied,
+    and any test whose assertion depended on a score crossing a threshold
+    failed roughly one run in four. Deterministic across processes is the
+    whole point of a fake.
     """
 
     def embed(self, texts: list[str]) -> list[list[float]]:
+        from zlib import crc32
+
         vectors = []
         for text in texts:
             vector = [0.0] * EMBEDDING_DIM
             for word in text.lower().split():
-                vector[hash(word) % EMBEDDING_DIM] += 1.0
+                vector[crc32(word.encode("utf-8")) % EMBEDDING_DIM] += 1.0
             vectors.append(vector)
         return vectors
 

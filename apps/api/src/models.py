@@ -572,6 +572,67 @@ class OutboundMessage(Base):
     )
 
 
+class Document(Base):
+    """A file MORICE uploaded, and the text ARIA read out of it.
+
+    The full text is kept alongside the memory item rather than only in
+    chunks: chunks are optimised for retrieval, and answering "what does the
+    contract say about notice periods" sometimes needs the surrounding
+    paragraph that chunking split away.
+    """
+
+    __tablename__ = "documents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    filename: Mapped[str] = mapped_column(String(300))
+    format: Mapped[str] = mapped_column(String(20))  # pdf | txt | md | csv | json
+    pages: Mapped[int] = mapped_column(default=0)
+    characters: Mapped[int] = mapped_column(default=0)
+    sections: Mapped[list] = mapped_column(JSON, default=list)
+    content: Mapped[str] = mapped_column(Text)
+    # The searchable copy in semantic memory.
+    memory_item_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    facts_extracted: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, index=True
+    )
+
+    facts: Mapped[list["DocumentFact"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+
+
+class DocumentFact(Base):
+    """Something a model claims a document states.
+
+    A PROPOSAL, not a belief. It becomes one of ARIA's memories only when
+    MORICE accepts it — a model reading a document is not sufficient grounds
+    for ARIA to believe something about his life.
+
+    `quote` is required and verified to appear in the document. That check is
+    what separates "extracted from your document" from "invented while looking
+    at your document".
+    """
+
+    __tablename__ = "document_facts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_new_id)
+    document_id: Mapped[str] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    fact: Mapped[str] = mapped_column(Text)
+    # personal | professional | financial | legal | project | other
+    category: Mapped[str] = mapped_column(String(20), default="other", index=True)
+    # Verbatim supporting text from the document.
+    quote: Mapped[str] = mapped_column(String(400))
+    # proposed | accepted | rejected
+    status: Mapped[str] = mapped_column(String(20), default="proposed", index=True)
+    memory_item_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    document: Mapped[Document] = relationship(back_populates="facts")
+
+
 class Insight(Base):
     """Something ARIA noticed on her own and thinks MORICE should know.
 

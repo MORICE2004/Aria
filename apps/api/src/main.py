@@ -23,12 +23,14 @@ from src.routers import (
     communication,
     connect,
     costs,
+    documents,
     health,
     jobs,
     learning,
     memory,
     notifications,
     proactive,
+    research,
     style,
     tasks,
     whatsapp,
@@ -129,13 +131,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    app.middleware("http")(rate_limit_middleware)
+
     # CORS: the browser blocks cross-origin requests unless the API allows
     # them. Allowed: the dashboard on localhost AND on private-network (LAN)
     # addresses — so the phone can use ARIA over home Wi-Fi. Never "*", and
     # public origins stay blocked. (If exposing beyond the LAN, set
     # ARIA_PASSWORD and put a reverse proxy with HTTPS in front.)
-    app.middleware("http")(rate_limit_middleware)
-
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -166,6 +168,8 @@ def create_app() -> FastAPI:
     app.include_router(style.router, dependencies=protected)
     app.include_router(costs.router, dependencies=protected)
     app.include_router(proactive.router, dependencies=protected)
+    app.include_router(documents.router, dependencies=protected)
+    app.include_router(research.router, dependencies=protected)
     # Secret-authenticated, called by the local OpenClaw gateway — not JWT.
     app.include_router(whatsapp.ingest_router)
 
