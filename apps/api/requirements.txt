@@ -8,6 +8,7 @@ pydantic-settings~=2.7   # loads typed settings from .env
 # Database (Phase 1)
 sqlalchemy[asyncio]~=2.0 # ORM: Python classes <-> database tables
 asyncpg~=0.30            # async PostgreSQL driver
+alembic~=1.14            # schema migrations - create_all cannot alter existing tables
 greenlet~=3.1            # required by SQLAlchemy's async mode
 
 # LLM (Phase 1)

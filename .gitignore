@@ -38,3 +38,4 @@ apps/wa-bridge/auth/
 apps/wa-bridge/config.json
 # Spooled messages are real personal conversation content awaiting delivery.
 apps/wa-bridge/spool/
+backups/
