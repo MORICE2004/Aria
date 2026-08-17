@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src import commands
 from src.db import SessionMaker, get_session
 from src.llm import get_router
 from src.llm.base import ChatMessage
@@ -101,8 +102,38 @@ async def send_message(
     model_router=Depends(get_router),
     memory: MemoryService = Depends(get_memory_service),
 ) -> StreamingResponse:
-    """Save the user message, then stream the assistant's reply as plain text."""
+    """Save the user message, then stream the assistant's reply as plain text.
+
+    Some messages ARIA answers herself. "ARIA, briefing", "why did you send
+    that?", "stop" reach the capability that owns them instead of a chat model
+    that cannot see any of it — see `src/commands.py` for why the matching is
+    deterministic rather than model-judged.
+    """
     conversation = await _get_conversation_or_404(session, conversation_id)
+
+    # Checked before the retrieval below, which would otherwise embed and search
+    # for a message that is never going to a model.
+    handled = await commands.handle(session, body.content)
+    if handled is not None:
+        logger.info("Handled %r as the %s command", body.content[:60], handled.command)
+        _record_user_message(session, conversation, body.content)
+        session.add(
+            Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=handled.reply,
+            )
+        )
+        await session.commit()
+
+        # Streamed like any other reply so nothing downstream needs to know the
+        # difference, and stored so the conversation reads back correctly.
+        async def command_reply():
+            yield handled.reply
+
+        return StreamingResponse(
+            command_reply(), media_type="text/plain; charset=utf-8"
+        )
 
     # RAG: fetch memories relevant to this message and give them to the model.
     # Only well-matching hits are included — irrelevant context hurts quality.
@@ -127,10 +158,7 @@ async def send_message(
     history = [ChatMessage(role=m.role, content=m.content) for m in result.scalars()]
     history.append(ChatMessage(role="user", content=body.content))
 
-    session.add(Message(conversation_id=conversation_id, role="user", content=body.content))
-    # First message? Use its opening words as the conversation title.
-    if not conversation.title or conversation.title == "New conversation":
-        conversation.title = body.content[:60]
+    _record_user_message(session, conversation, body.content)
     await session.commit()
 
     # Conversation is CONVERSE-class work: local by default (free and private),
@@ -170,6 +198,23 @@ async def delete_conversation(
     conversation = await _get_conversation_or_404(session, conversation_id)
     await session.delete(conversation)
     await session.commit()
+
+
+def _record_user_message(
+    session: AsyncSession, conversation: Conversation, content: str
+) -> None:
+    """Store what MORICE said, and title the conversation on the first message.
+
+    Not committed here: the caller decides when, because a command and a model
+    reply commit at different points.
+    """
+    session.add(
+        Message(
+            conversation_id=conversation.id, role="user", content=content
+        )
+    )
+    if not conversation.title or conversation.title == "New conversation":
+        conversation.title = content[:60]
 
 
 async def _get_conversation_or_404(

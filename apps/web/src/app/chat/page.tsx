@@ -115,9 +115,33 @@ export default function ChatPage() {
       <section className="flex flex-1 flex-col glass rounded-xl">
         <div className="flex-1 space-y-4 overflow-y-auto p-4">
           {messages.length === 0 && (
-            <p className="mt-16 text-center text-sm text-zinc-500">
-              Say hello — ARIA is listening.
-            </p>
+            <div className="mt-16 text-center">
+              <p className="text-sm text-zinc-500">
+                Say hello — ARIA is listening.
+              </p>
+              {/* Discoverability, not a command palette: these are answered
+                  from her own records rather than by the chat model, and there
+                  is no way to find that out by guessing. */}
+              <p className="mx-auto mt-6 max-w-sm text-xs text-zinc-600">
+                She answers some things herself, from what she has recorded:
+              </p>
+              <div className="mx-auto mt-2 flex max-w-sm flex-wrap justify-center gap-1.5">
+                {[
+                  "briefing",
+                  "what did I miss?",
+                  "why did you send that?",
+                  "stop",
+                ].map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => setInput(suggestion)}
+                    className="rounded-full px-2.5 py-1 text-xs text-zinc-500 ring-1 ring-white/10 hover:text-cyan-300 hover:ring-cyan-500/30"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
           {messages.map((m) => (
             <div
