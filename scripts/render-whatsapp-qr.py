@@ -1,22 +1,25 @@
-"""Show ARIA's WhatsApp pairing QR at a size a phone will actually scan.
+r"""Show ARIA's WhatsApp pairing QR at a size a phone will actually scan.
 
-`node sender.js` prints a QR in the terminal. On Windows that often will not
-scan: the small renderer draws each module as a half-block character, and the
-console font's aspect ratio squashes them just enough that a phone camera
-refuses the code. The result looks like a broken pairing flow when the code
-itself is fine.
+The bridge prints a QR in the terminal. On Windows that often will not scan:
+the small renderer draws each module as a half-block character, and the console
+font's aspect ratio squashes them just enough that a phone camera refuses the
+code. The result looks like a broken pairing flow when the code itself is fine.
 
 This renders the same code as a real image, full size, in the browser.
 
-    # terminal 1
-    cd apps/wa-bridge && node sender.js
+    # terminal 1 - the device you are pairing
+    node C:\Users\MORICE\projects\aria\apps\wa-bridge\index.js    # receiving
+    node C:\Users\MORICE\projects\aria\apps\wa-bridge\sender.js   # sending
 
-    # terminal 2, from the repo root
-    apps/api/.venv/Scripts/python scripts/render-whatsapp-qr.py
+    # terminal 2 - picks up whichever code is waiting
+    C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe C:\Users\MORICE\projects\aria\scripts\render-whatsapp-qr.py
+
+Raw docstring, because those paths contain \U and \a — Python reads those as
+escape sequences in a normal string and the module stops importing.
 
 WhatsApp rotates the pairing code roughly every 20 seconds, so this follows the
-file the sender writes and re-renders when it changes; the page reloads itself.
-Leave both running, scan when the page shows a code, and the sender prints
+file the bridge writes and re-renders when it changes; the page reloads itself.
+Leave both running, scan when the page shows a code, and the bridge prints
 "Connected" the moment the phone accepts it.
 
 No new dependency: `qrcode` is already installed in the API's environment,
@@ -48,10 +51,21 @@ except ModuleNotFoundError:  # pragma: no cover - environment problem, not logic
         "    apps/api/.venv/Scripts/python scripts/render-whatsapp-qr.py"
     )
 
-# Written by apps/wa-bridge/sender.js each time WhatsApp issues a new code, and
-# deleted when the device links.
-QR_FILE = ROOT / "apps" / "wa-bridge" / "qr-current.txt"
-PAGE = ROOT / "apps" / "wa-bridge" / "qr-current.html"
+# Written by the bridge each time WhatsApp issues a new code, and deleted when
+# the device links. Two roles, because the observer (which receives) and the
+# sender (which delivers) pair as separate devices and can be linked at
+# different times — one file each, so linking one never overwrites the other's
+# live code.
+BRIDGE = ROOT / "apps" / "wa-bridge"
+ROLES = ("observer", "sender")
+
+
+def qr_file(role: str) -> Path:
+    return BRIDGE / f"qr-current-{role}.txt"
+
+
+def page_file(role: str) -> Path:
+    return BRIDGE / f"qr-current-{role}.html"
 
 # How often the page reloads. Comfortably shorter than WhatsApp's ~20 s
 # rotation, so what is on screen is the code that is currently valid.
@@ -62,7 +76,7 @@ _PAGE_TEMPLATE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta http-equiv="refresh" content="{reload}">
-<title>Link ARIA's WhatsApp sender</title>
+<title>Link ARIA: {role}</title>
 <style>
   body {{
     margin: 0; min-height: 100vh; display: grid; place-items: center;
@@ -85,7 +99,8 @@ _PAGE_TEMPLATE = """<!doctype html>
 </head>
 <body>
 <main>
-  <h1>Link ARIA's WhatsApp sender</h1>
+  <h1>Link ARIA's {role} device</h1>
+  <p>{role_note}</p>
   <p>Use the demo number, not your main one.</p>
   {body}
   <p class="steps">
@@ -98,17 +113,18 @@ _PAGE_TEMPLATE = """<!doctype html>
 """
 
 
-def render_page(payload: str | None, *, linked: bool) -> str:
+def render_page(payload: str | None, *, linked: bool, role: str) -> str:
+    starter = "index.js" if role == "observer" else "sender.js"
     if linked:
         body = (
             '<p class="done" style="font-size:15px;margin-top:20px">'
-            "Linked. The sender is connected — you can close this page and the "
+            f"Linked. The {role} is connected — you can close this page and the "
             "second terminal.</p>"
         )
     elif payload is None:
         body = (
             '<p class="waiting" style="margin-top:20px">Waiting for a code from '
-            "<code>node sender.js</code>…</p>"
+            f"<code>node {starter}</code>…</p>"
         )
     else:
         qr = qrcode.QRCode(border=2)
@@ -122,19 +138,47 @@ def render_page(payload: str | None, *, linked: bool) -> str:
             svg = svg.split("?>", 1)[1].lstrip()
         body = f'<div class="plate">{svg}</div>'
 
-    return _PAGE_TEMPLATE.format(reload=RELOAD_SECONDS, body=body)
+    return _PAGE_TEMPLATE.format(
+        reload=RELOAD_SECONDS,
+        body=body,
+        role=role,
+        role_note=(
+            "This is the device that RECEIVES messages for ARIA. It cannot send."
+            if role == "observer"
+            else "This is the device that DELIVERS ARIA's approved replies."
+        ),
+    )
 
 
-def read_payload() -> str | None:
+def read_payload(role: str) -> str | None:
     try:
-        text = QR_FILE.read_text(encoding="utf-8").strip()
+        text = qr_file(role).read_text(encoding="utf-8").strip()
     except FileNotFoundError:
         return None
     return text or None
 
 
+def detect_role() -> str | None:
+    """Whichever role currently has a code waiting. Observer wins a tie.
+
+    Exists so the common case needs no --role at all: only one device is ever
+    mid-pairing, and asking the reader which one it is when the answer is on
+    disk is a question that should not be asked.
+    """
+    for role in ROLES:
+        if read_payload(role) is not None:
+            return role
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--role",
+        choices=ROLES,
+        help="which device is pairing. Omitted: whichever has a code waiting "
+        "(observer if both do).",
+    )
     parser.add_argument(
         "--no-open", action="store_true", help="write the page but do not open it"
     )
@@ -145,8 +189,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    print(f"  watching {QR_FILE}")
-    print(f"  page     {PAGE}")
+    role = args.role or detect_role() or "observer"
+    watched, page = qr_file(role), page_file(role)
+
+    print(f"  role     {role}")
+    print(f"  watching {watched}")
+    print(f"  page     {page}")
 
     # Whether a code has EVER appeared. Distinguishes "the sender has not
     # started yet" from "the device linked, so the file went away" — which look
@@ -156,23 +204,26 @@ def main() -> int:
     opened = False
 
     while True:
-        payload = read_payload()
+        payload = read_payload(role)
         linked = seen_a_code and payload is None
         if payload is not None:
             seen_a_code = True
 
         if payload != last_payload:
-            PAGE.write_text(render_page(payload, linked=linked), encoding="utf-8")
+            page.write_text(
+                render_page(payload, linked=linked, role=role), encoding="utf-8"
+            )
             last_payload = payload
             if payload is not None:
                 print(f"  new code rendered ({time.strftime('%H:%M:%S')})")
             elif linked:
-                print("  device linked — sending is live. Nothing left to scan.")
+                print(f"  {role} linked. Nothing left to scan.")
             else:
-                print("  no code yet; start `node sender.js` in another terminal")
+                starter = "index.js" if role == "observer" else "sender.js"
+                print(f"  no code yet; start `node {starter}` in another terminal")
 
         if not opened and not args.no_open:
-            webbrowser.open(PAGE.as_uri())
+            webbrowser.open(page.as_uri())
             opened = True
 
         if args.once or linked:

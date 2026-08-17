@@ -35,10 +35,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { makeDeliver } from "./deliver.js";
+import { makeQrFallback } from "./qr-fallback.js";
 import { Spool } from "./spool.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const AUTH_DIR = join(HERE, "auth");
+const qrFallback = makeQrFallback(HERE, "observer");
 const SPOOL_DIR = join(HERE, "spool");
 
 // ── config ────────────────────────────────────────────────────────────────
@@ -113,9 +115,11 @@ async function start() {
       console.log("\n  Scan this with WhatsApp on your phone:");
       console.log("  (WhatsApp → Settings → Linked Devices → Link a Device)\n");
       qrcode.generate(qr, { small: true });
+      qrFallback.write(qr);
     }
 
     if (connection === "open") {
+      qrFallback.clear();
       const me = sock.user?.id?.split(":")[0] || "unknown";
       console.log(`\n  ✓ Connected as +${me} — READ ONLY.`);
       console.log("  ARIA will observe messages. It cannot reply.\n");

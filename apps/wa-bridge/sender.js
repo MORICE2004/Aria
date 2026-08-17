@@ -53,15 +53,16 @@ import makeWASocket, {
 } from "baileys";
 import pino from "pino";
 import qrcode from "qrcode-terminal";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+
+import { makeQrFallback } from "./qr-fallback.js";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Deliberately NOT the observer's auth directory: a separate linked device.
 const AUTH_DIR = join(HERE, "auth-sender");
-// Where the current pairing code is mirrored, for render-qr.js.
-const QR_FILE = join(HERE, "qr-current.txt");
+const qrFallback = makeQrFallback(HERE, "sender");
 const POLL_MS = 3000;
 const HTTP_TIMEOUT_MS = 15000;
 
@@ -162,48 +163,6 @@ async function deliverApproved(sock) {
   }
 }
 
-/**
- * Also write the QR payload to disk, for when the terminal one will not scan.
- *
- * Windows terminals render the small QR with half-block characters, and the
- * console font's aspect ratio often squashes the modules just enough that a
- * phone camera refuses it. That failure looks exactly like a broken pairing
- * flow, so there needs to be a second way to get the same code.
- *
- * The payload is short-lived by nature: WhatsApp rotates it roughly every 20
- * seconds and the file is overwritten each time, so the newest line is always
- * the live one. It IS a pairing credential while it lives — anyone who scans it
- * links a device to the account — which is why it stays in the bridge directory
- * (already gitignored alongside the auth state) and is deleted on connect.
- */
-function writeQrFallback(qr) {
-  try {
-    writeFileSync(QR_FILE, qr, "utf8");
-    // Absolute paths, because the reader is in whatever directory they happen
-    // to be in — and PowerShell will not run a relative executable path at all.
-    const repo = resolve(HERE, "..", "..");
-    console.log("\n  Cannot scan the code above? In a SECOND terminal, run:");
-    console.log(
-      `    ${join(repo, "apps", "api", ".venv", "Scripts", "python.exe")} ` +
-        `${join(repo, "scripts", "render-whatsapp-qr.py")}`,
-    );
-    console.log(
-      "  It opens a full-size, scannable page and follows this code as it" +
-        " rotates.\n",
-    );
-  } catch (err) {
-    console.warn(`[sender] could not write ${basename(QR_FILE)}: ${err?.message}`);
-  }
-}
-
-function clearQrFallback() {
-  try {
-    if (existsSync(QR_FILE)) rmSync(QR_FILE);
-  } catch {
-    /* a leftover file is harmless: the code in it expired seconds later */
-  }
-}
-
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
@@ -227,11 +186,11 @@ async function start() {
       console.log("  (WhatsApp -> Settings -> Linked Devices -> Link a Device)");
       console.log("  Unlink this device at any time to hard-stop all sending.\n");
       qrcode.generate(qr, { small: true });
-      writeQrFallback(qr);
+      qrFallback.write(qr);
     }
 
     if (connection === "open") {
-      clearQrFallback();
+      qrFallback.clear();
       const me = sock.user?.id?.split(":")[0] || "unknown";
       console.log(`\n  Connected as +${me} - SENDER.`);
       console.log("  Delivers only messages ARIA has already approved.\n");
