@@ -88,6 +88,27 @@ class FakeEmbedder(EmbeddingProvider):
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_auth():
+    """Force auth OFF for every test unless a test asks for it.
+
+    The suite used to inherit whatever was in the developer's .env, so setting
+    a real ARIA_PASSWORD on this machine broke a test that had nothing to do
+    with the change. A test suite whose result depends on an untracked local
+    file is a test suite that cannot be trusted on anyone else's machine.
+
+    Tests that need a login use the `auth_enabled` fixture, which runs after
+    this one and sets a known password.
+    """
+    from src.core.config import get_settings
+
+    settings = get_settings()
+    before = settings.aria_password
+    settings.aria_password = ""
+    yield
+    settings.aria_password = before
+
+
+@pytest.fixture(autouse=True)
 def _fresh_rate_limits():
     """Clear the rate limiters between tests.
 

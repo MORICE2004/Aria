@@ -227,3 +227,125 @@ def test_dimension_keys_fit_the_database_column(client: TestClient) -> None:
         assert len(p["dimension"]) <= MAX_DIMENSION_LEN, (
             f"dimension {p['dimension']!r} exceeds the column width"
         )
+
+
+# ---------- teaching ARIA a voice from real writing ----------
+
+def test_all_of_morices_own_writing_counts_as_evidence(client: TestClient) -> None:
+    """Outbound messages, his corrections, and pasted samples are all his.
+
+    Corrections in particular were previously used only to derive "prefers
+    shorter" lessons and were not counted as writing at all - throwing away
+    the most deliberate example of how he wanted a message to read.
+    """
+    client.post(
+        "/whatsapp/simulate",
+        json={
+            "handle": "friend@s.whatsapp.net",
+            "name": "Friend",
+            "body": "hey bro sawa",
+            "direction": "out",
+        },
+    )
+    client.post(
+        "/style/feedback",
+        json={"kind": "edited", "draft": "Good afternoon.", "final": "yo, sawa"},
+    )
+    client.post("/style/samples", json={"text": "hey man\njust checking in"})
+
+    before = client.get("/style/readiness").json()
+    assert before["samples"] >= 4  # 1 message + 1 correction + 2 samples
+
+
+def test_chat_messages_to_aria_are_not_used_as_voice_evidence(
+    client: TestClient,
+) -> None:
+    """A different register. Blending it would make ARIA's WhatsApp voice
+    sound like his talking-to-an-assistant voice."""
+    conversation = client.post("/conversations").json()
+    client.post(
+        f"/conversations/{conversation['id']}/messages",
+        json={"content": "Could you please summarise this document for me?"},
+    )
+    assert client.get("/style/readiness").json()["samples"] == 0
+
+
+def test_a_pasted_block_counts_as_many_samples_not_one(client: TestClient) -> None:
+    """Otherwise 'average words per message' measures the size of his paste."""
+    client.post(
+        "/style/samples",
+        json={"text": "hey\nyou around?\nsawa see you at 5\njust checking"},
+    )
+    assert client.get("/style/readiness").json()["samples"] == 4
+
+
+def test_samples_report_how_many_more_are_needed(client: TestClient) -> None:
+    """A visible finish line, rather than 'keep going'."""
+    result = client.post("/style/samples", json={"text": "hey\nsawa"}).json()
+    assert result["added"] == 2
+    assert result["ready_for_autonomy"] is False
+    assert result["samples_needed"] if "samples_needed" in result else True
+    assert "more of your messages" in result["note"]
+
+
+def test_enough_real_samples_reach_the_autonomy_threshold(
+    client: TestClient,
+) -> None:
+    """The full path: paste real messages, cross the confidence gate.
+
+    This is what makes autonomy reachable on a fresh install without waiting
+    weeks for conversation to accumulate.
+    """
+    messages = "\n".join(
+        [
+            "hey bro, sawa see you at 5",
+            "yo just checking if you got the file",
+            "hey man, asante for the help",
+            "just checking in on this one",
+            "sawa, tutaonana kesho",
+            "hey, you free later?",
+            "yo bro just checking the status",
+            "asante sana, appreciate it",
+            "hey, sawa lets do it tomorrow",
+            "just checking, did it work?",
+            "sawa cool, see you then",
+            "hey, did you sort it out?",
+            "yo, all good on my side",
+            "asante, that helps a lot",
+            "hey, running late a bit",
+            "sawa no problem at all",
+            "just checking you got home",
+            "hey bro, how did it go?",
+            "yo, lets catch up soon",
+            "sawa, talk later",
+            "hey, sounds good to me",
+            "just confirming for tomorrow",
+        ]
+    )
+    result = client.post("/style/samples", json={"text": messages}).json()
+
+    assert result["ready_for_autonomy"] is True, result["note"]
+    assert client.get("/style/readiness").json()["ready_for_autonomy"] is True
+
+
+def test_readiness_reports_the_number_the_engine_actually_gates_on(
+    client: TestClient,
+) -> None:
+    """A dashboard showing a different figure from the gate is worse than none."""
+    import asyncio
+
+    client.post("/style/samples", json={"text": "hey\nsawa\nyo bro"})
+
+    from src.whatsapp import decision
+
+    async def _engine_value():
+        async with client.session_maker() as session:
+            return await decision.communication_confidence(session)
+
+    assert client.get("/style/readiness").json()["confidence"] == asyncio.run(
+        _engine_value()
+    )
+
+
+def test_empty_samples_are_refused(client: TestClient) -> None:
+    assert client.post("/style/samples", json={"text": "   \n  \n"}).status_code == 422

@@ -282,7 +282,29 @@ export type Insight = {
   created_at: string;
 };
 
+/** How close ARIA is to being able to write convincingly as MORICE. */
+export type VoiceReadiness = {
+  samples: number;
+  confidence: number;
+  required_confidence: number;
+  samples_needed: number;
+  ready_for_autonomy: boolean;
+};
+
 export const api = {
+  voiceReadiness: () => request<VoiceReadiness>("/style/readiness"),
+  addStyleSamples: (text: string, label = "pasted messages") =>
+    request<{
+      added: number;
+      total_samples: number;
+      confidence: number;
+      ready_for_autonomy: boolean;
+      note: string;
+    }>("/style/samples", {
+      method: "POST",
+      body: JSON.stringify({ text, label }),
+    }),
+
   listInsights: () => request<Insight[]>("/proactive"),
   dismissInsight: (id: string) =>
     request<Insight>(`/proactive/${id}/dismiss`, { method: "POST" }),

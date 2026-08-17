@@ -107,6 +107,22 @@ bridge went live. Now derived from whether real (non-simulated) messages exist.
   them. Now one helper: `src/core/clock.py`. Anything from the database goes
   through `as_utc()` before arithmetic.
 
+### Auto-reply readiness (2026-08-16, live)
+
+Everything is configured and green except the voice threshold:
+
+| Gate | State |
+|---|---|
+| `ARIA_PASSWORD` set | **done** — auth on, verified 401/200 |
+| Contact enabled | **done** — Friend: trust `high`, autonomy on, greeting/routine_reply/status_update |
+| Global mode | **done** — `limited_autonomy` |
+| Voice confidence | **0.632 / 0.70** — needs ~7 more of MORICE's own messages |
+| Sender device linked | **not done** — needs a QR scan on his phone |
+
+Style evidence now counts outbound messages **plus his corrections plus
+pasted samples**; corrections alone lifted confidence 0.592 → 0.632. Paste
+more at `/style`, or `POST /style/samples`.
+
 ### Still not done
 
 - **The sender has never delivered a real WhatsApp message.** It needs MORICE

@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { api, type StyleProfile } from "@/lib/api";
+import { api, type StyleProfile, type VoiceReadiness } from "@/lib/api";
 
 function confidenceColor(c: number): string {
   if (c >= 0.6) return "text-emerald-400";
@@ -33,15 +33,40 @@ export default function StylePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [samples, setSamples] = useState("");
+  const [readiness, setReadiness] = useState<VoiceReadiness | null>(null);
 
   const refresh = useCallback(
-    () => api.getStyleProfile().then(setProfile).catch((e: Error) => setError(e.message)),
+    () =>
+      Promise.all([api.getStyleProfile(), api.voiceReadiness()])
+        .then(([p, r]) => {
+          setProfile(p);
+          setReadiness(r);
+        })
+        .catch((e: Error) => setError(e.message)),
     [],
   );
 
   useEffect(() => {
-    refresh();
+    const first = setTimeout(refresh, 0);
+    return () => clearTimeout(first);
   }, [refresh]);
+
+  async function addSamples() {
+    if (!samples.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await api.addStyleSamples(samples);
+      setSamples("");
+      setNote(`Learned from ${r.added} of your messages. ${r.note}`);
+      await refresh();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function relearn() {
     setBusy(true);
@@ -100,6 +125,86 @@ export default function StylePage() {
 
       {error && <p role="alert" className="mb-4 text-sm text-red-400">{error}</p>}
       {note && <p className="mb-4 text-sm text-cyan-300">{note}</p>}
+
+      {/* Voice readiness. Shown first because it is the single gate between
+          drafting and autonomous replying, and until now the only way to see
+          it was to ask the autonomy engine about a specific contact. */}
+      {readiness && (
+        <section className="glass mb-6 rounded-xl p-5">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-medium">Can ARIA write as you?</h3>
+            <span
+              className={`text-sm font-semibold ${
+                readiness.ready_for_autonomy ? "text-emerald-300" : "text-amber-300"
+              }`}
+            >
+              {(readiness.confidence * 100).toFixed(0)}% / need{" "}
+              {(readiness.required_confidence * 100).toFixed(0)}%
+            </span>
+          </div>
+
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className={`h-full rounded-full ${
+                readiness.ready_for_autonomy ? "bg-emerald-400/80" : "bg-amber-400/80"
+              }`}
+              style={{
+                width: `${Math.min(
+                  100,
+                  Math.round(
+                    (readiness.confidence / readiness.required_confidence) * 100,
+                  ),
+                )}%`,
+              }}
+            />
+          </div>
+
+          <p className="mt-3 text-xs text-zinc-400">
+            {readiness.ready_for_autonomy ? (
+              <>
+                Learned from <strong>{readiness.samples}</strong> of your messages.
+                ARIA can reply on her own to contacts you have enabled.
+              </>
+            ) : (
+              <>
+                Learned from <strong>{readiness.samples}</strong> of your messages.
+                About <strong>{readiness.samples_needed}</strong> more would let
+                her reply on her own. Until then she drafts and you send.
+              </>
+            )}
+          </p>
+
+          <div className="mt-4">
+            <label
+              htmlFor="samples"
+              className="block text-xs font-medium text-zinc-300"
+            >
+              Paste messages you have actually sent — one per line
+            </label>
+            <p className="mb-2 mt-1 text-[11px] text-zinc-500">
+              Copy a few real replies from WhatsApp. They must be your own
+              words: ARIA will not invent samples of how you write, because
+              she would then send that invented voice to real people in your
+              name.
+            </p>
+            <textarea
+              id="samples"
+              value={samples}
+              onChange={(e) => setSamples(e.target.value)}
+              rows={6}
+              placeholder={"hey bro, sawa see you at 5\njust checking if you got the file\nasante, appreciate it"}
+              className="w-full rounded-lg bg-black/30 p-3 font-mono text-xs text-zinc-200 outline-none ring-1 ring-white/10 focus:ring-cyan-500/40"
+            />
+            <button
+              onClick={addSamples}
+              disabled={busy || !samples.trim()}
+              className="mt-2 rounded-lg bg-cyan-500/20 px-4 py-2 text-sm text-cyan-200 hover:bg-cyan-500/30 disabled:opacity-40"
+            >
+              Teach ARIA my voice
+            </button>
+          </div>
+        </section>
+      )}
 
       <button
         onClick={relearn}

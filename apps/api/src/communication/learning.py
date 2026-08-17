@@ -51,6 +51,23 @@ def confidence_for(evidence_count: int) -> float:
     return round(min(raw, _MAX_CONFIDENCE), 3)
 
 
+def samples_needed_for(target_confidence: float) -> int:
+    """How many of MORICE's messages would reach a given confidence.
+
+    The inverse of the curve above. Exists so ARIA can answer "how much more
+    do you need?" with a number instead of "keep going" — the difference
+    between a system that feels stuck and one with a visible finish line.
+    """
+    if target_confidence <= 0:
+        return 0
+    if target_confidence >= _MAX_CONFIDENCE:
+        target_confidence = _MAX_CONFIDENCE
+    # n / (n + K) = c  ->  n = cK / (1 - c)
+    import math
+
+    return math.ceil(target_confidence * _CONFIDENCE_K / (1 - target_confidence))
+
+
 def scope_for_contact(contact: Contact | None) -> str:
     """Most specific scope available for a contact."""
     if contact is None:
@@ -98,20 +115,70 @@ async def _upsert_pattern(
     return pattern
 
 
-async def refresh_from_messages(
+async def collect_own_writing(
     session: AsyncSession, contact: Contact | None = None
-) -> dict[str, str]:
-    """Re-measure style from MORICE's own observed messages.
+) -> list[str]:
+    """Every piece of text MORICE actually wrote, for style measurement.
 
-    Only `direction == "out"` messages are used — those are the ones he
-    wrote. Inbound messages are other people's voices and must never shape
-    how ARIA writes as him.
+    Three sources, all genuinely his words:
+
+      1. **Outbound WhatsApp messages** — what he sent to real people.
+      2. **His corrections** — when he rewrites one of ARIA's drafts, the
+         final text is his. These were previously used only to derive
+         "prefers shorter" style lessons, and were not counted as writing
+         at all, which threw away the single most deliberate example of how
+         he wanted a message to read.
+      3. **Writing samples he added explicitly** (`kind="style"` memories).
+         The memory system has supported these since Phase 2 and the style
+         learner ignored them entirely.
+
+    Deliberately NOT included: his chat messages to ARIA. Those are his
+    words, but a different register — nobody talks to their assistant the
+    way they text a friend — and blending them would make ARIA's WhatsApp
+    voice sound like his ARIA voice. Inbound messages are excluded for the
+    stronger reason that they are other people's voices.
     """
+    texts: list[str] = []
+
     query = select(WhatsAppMessage).where(WhatsAppMessage.direction == "out")
     if contact is not None:
         query = query.where(WhatsAppMessage.contact_id == contact.id)
-    rows = (await session.execute(query)).scalars()
-    texts = [m.body for m in rows]
+    texts.extend(m.body for m in (await session.execute(query)).scalars())
+
+    # What he rewrote a draft into. Scoped the same way as messages.
+    corrections = select(LearningEvent).where(
+        LearningEvent.kind == "edited", LearningEvent.final != ""
+    )
+    if contact is not None:
+        corrections = corrections.where(LearningEvent.contact_id == contact.id)
+    texts.extend(e.final for e in (await session.execute(corrections)).scalars())
+
+    # Explicit writing samples. Global only: a sample he pasted is an example
+    # of how he writes in general, not how he writes to one person.
+    if contact is None:
+        from src.models import MemoryItem
+
+        samples = await session.execute(
+            select(MemoryItem).where(MemoryItem.kind == "style")
+        )
+        for item in samples.scalars():
+            # A pasted block of several messages is several samples, not one
+            # long one — otherwise "average words per message" measures the
+            # size of his paste rather than the length of his messages.
+            texts.extend(
+                line.strip()
+                for line in item.content.splitlines()
+                if line.strip()
+            )
+
+    return [t for t in texts if t and t.strip()]
+
+
+async def refresh_from_messages(
+    session: AsyncSession, contact: Contact | None = None
+) -> dict[str, str]:
+    """Re-measure style from everything MORICE has actually written."""
+    texts = await collect_own_writing(session, contact)
 
     metrics = style.analyze(texts)
     if metrics.sample_size == 0:

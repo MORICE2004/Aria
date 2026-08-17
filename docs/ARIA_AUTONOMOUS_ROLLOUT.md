@@ -66,6 +66,27 @@ ARIA drafts replies for trusted contacts. MORICE approves, corrects, or
 rejects, and corrections feed the learning loop. Sensitive messages are
 deliberately not drafted.
 
+### Teaching ARIA your voice (the usual blocker)
+
+Autonomy needs communication confidence ≥ 0.70, which the curve reaches at
+about 19 samples of your own writing. ARIA counts three sources, all genuinely
+yours:
+
+1. outbound WhatsApp messages she has observed,
+2. corrections you made to her drafts, and
+3. messages you paste at **`/style` → "Teach ARIA my voice"**.
+
+Pasting is the fast path: copy a few real replies out of WhatsApp, one per
+line. Check progress at any time:
+
+```bash
+curl -s localhost:8000/style/readiness
+```
+
+ARIA will **not** generate samples for you. A fabricated voice is one she
+would then send to real people in your name, so the samples must be text you
+actually wrote.
+
 ### Stage 3 — Limited autonomy, ONE contact
 The next step, and the one to take slowly.
 

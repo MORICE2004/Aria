@@ -379,21 +379,27 @@ async def correction_history(
 
 
 async def communication_confidence(
-    session: AsyncSession, contact: Contact
+    session: AsyncSession, contact: Contact | None = None
 ) -> float:
     """How well ARIA has learned to write as MORICE, for this contact.
 
     Uses the mean confidence of the style patterns that would actually shape
     the reply — the same patterns the drafting prompt is built from. Measuring
     anything else would let ARIA claim confidence she does not use.
+
+    `contact=None` gives the global figure, which is what the voice-readiness
+    view reports. Both callers go through this one function on purpose: a
+    dashboard showing a different number from the one the gate applies is
+    worse than showing nothing.
     """
     from src.communication import learning as comm_learning
     from src.models import StylePattern
 
     scopes = ["global"]
-    if contact.relationship and contact.relationship != "unknown":
-        scopes.append(f"relationship:{contact.relationship}")
-    scopes.append(f"contact:{contact.id}")
+    if contact is not None:
+        if contact.relationship and contact.relationship != "unknown":
+            scopes.append(f"relationship:{contact.relationship}")
+        scopes.append(f"contact:{contact.id}")
 
     rows = (
         await session.execute(
