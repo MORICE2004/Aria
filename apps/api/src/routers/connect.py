@@ -28,6 +28,11 @@ class ConnectInfo(BaseModel):
     lan_ip: str | None
     phone_url: str | None
     reason: str | None = None
+    # Tailscale address, when this machine is on a tailnet. Unlike the LAN
+    # address this one works from anywhere, so it is the more useful of the
+    # two whenever it exists.
+    tailscale_ip: str | None = None
+    tailscale_url: str | None = None
 
 
 def detect_lan_ip() -> str | None:
@@ -70,16 +75,44 @@ def detect_lan_ip() -> str | None:
     return None
 
 
+def detect_tailscale_ip() -> str | None:
+    """This machine's Tailscale address, if it is on a tailnet.
+
+    Tailscale hands out addresses from 100.64.0.0/10 — the carrier-grade NAT
+    block, which is deliberately NOT one of the RFC1918 private ranges. That
+    is why it needs its own detection here and its own CORS entry in main.py.
+    """
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addr = info[4][0]
+            try:
+                ip = ipaddress.IPv4Address(addr)
+            except ipaddress.AddressValueError:
+                continue
+            if ip in ipaddress.IPv4Network("100.64.0.0/10"):
+                return addr
+    except OSError:
+        pass
+    return None
+
+
 @router.get("", response_model=ConnectInfo)
 def connect_info() -> ConnectInfo:
+    tailscale = detect_tailscale_ip()
     ip = detect_lan_ip()
-    if ip is None:
+
+    if ip is None and tailscale is None:
         return ConnectInfo(
             lan_ip=None,
             phone_url=None,
             reason="No home-network address found — is this PC on Wi-Fi?",
         )
-    return ConnectInfo(lan_ip=ip, phone_url=f"http://{ip}:{WEB_PORT}")
+    return ConnectInfo(
+        lan_ip=ip,
+        phone_url=f"http://{ip}:{WEB_PORT}" if ip else None,
+        tailscale_ip=tailscale,
+        tailscale_url=f"http://{tailscale}:{WEB_PORT}" if tailscale else None,
+    )
 
 
 @router.get("/qr")

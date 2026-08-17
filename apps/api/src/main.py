@@ -134,14 +134,26 @@ def create_app() -> FastAPI:
     app.middleware("http")(rate_limit_middleware)
 
     # CORS: the browser blocks cross-origin requests unless the API allows
-    # them. Allowed: the dashboard on localhost AND on private-network (LAN)
-    # addresses — so the phone can use ARIA over home Wi-Fi. Never "*", and
-    # public origins stay blocked. (If exposing beyond the LAN, set
-    # ARIA_PASSWORD and put a reverse proxy with HTTPS in front.)
+    # them. Allowed: the dashboard on localhost, on private-network (LAN)
+    # addresses so the phone works over home Wi-Fi, and over Tailscale so it
+    # works away from home. Never "*", and public origins stay blocked.
+    #
+    # Tailscale needs explicit mention because its addresses are NOT private
+    # ranges: it uses 100.64.0.0/10, the carrier-grade NAT block. Without this
+    # the dashboard loads over the tunnel and every API call fails CORS —
+    # which looks like ARIA being broken rather than a policy decision.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-        allow_origin_regex=r"http://(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}):3000",
+        allow_origin_regex=(
+            r"^https?://("
+            r"192\.168\.\d{1,3}\.\d{1,3}"                      # home Wi-Fi
+            r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"                  # private
+            r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"      # private
+            r"|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"  # Tailscale
+            r"|[a-z0-9-]+\.[a-z0-9-]+\.ts\.net"                # Tailscale MagicDNS
+            r")(:3000)?$"
+        ),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

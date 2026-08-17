@@ -10,7 +10,15 @@
 import { useEffect, useState } from "react";
 import { API_URL } from "@/lib/api";
 
-type Info = { lan_ip: string | null; phone_url: string | null; reason?: string | null };
+type Info = {
+  lan_ip: string | null;
+  phone_url: string | null;
+  reason?: string | null;
+  // Present once this PC is on a tailnet. Unlike the Wi-Fi address, this one
+  // works from anywhere, so it is shown as the primary option when it exists.
+  tailscale_ip?: string | null;
+  tailscale_url?: string | null;
+};
 
 export default function ConnectPage() {
   const [info, setInfo] = useState<Info | null>(null);
@@ -30,6 +38,35 @@ export default function ConnectPage() {
         Point your phone&apos;s camera at the code. Your phone must be on the
         same Wi-Fi as this PC.
       </p>
+
+      {info?.tailscale_url && (
+        <div className="glass mb-6 rounded-xl p-5">
+          <h3 className="text-sm font-medium text-emerald-300">
+            Works from anywhere
+          </h3>
+          <p className="mt-1 text-xs text-zinc-400">
+            This PC is on your Tailscale network. Use this address instead when
+            you are not at home — it needs no Wi-Fi in common, and ARIA still
+            never touches the public internet.
+          </p>
+          <p className="mt-3 font-mono text-lg text-emerald-300">
+            {info.tailscale_url}
+          </p>
+          <button
+            onClick={async () => {
+              await navigator.clipboard.writeText(info.tailscale_url!);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+            className="mt-2 rounded-md border border-zinc-700 px-3 py-1 text-xs text-zinc-300 hover:text-white"
+          >
+            {copied ? "Copied ✓" : "Copy link"}
+          </button>
+          <p className="mt-3 text-[11px] text-zinc-500">
+            Install Tailscale on your phone and sign in with the same account.
+          </p>
+        </div>
+      )}
 
       {info?.phone_url ? (
         <div className="glass rounded-xl p-6 text-center">
