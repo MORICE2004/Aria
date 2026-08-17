@@ -14,18 +14,22 @@ import {
   Brain,
   CalendarCheck,
   Coins,
+  FileText,
   GraduationCap,
   Home,
   MessageSquare,
   MessagesSquare,
   PenLine,
+  Search,
   Send,
-  Settings,
   ShieldCheck,
   Smartphone,
   type LucideIcon,
 } from "lucide-react";
 
+// Every entry must point at a page that exists. "Settings" used to be here and
+// linked to a route that was never built, so the one nav item promising control
+// over ARIA was the one that 404'd.
 const NAV_ITEMS: { label: string; href: string; icon: LucideIcon }[] = [
   { label: "Home", href: "/", icon: Home },
   { label: "Chat", href: "/chat", icon: MessageSquare },
@@ -35,12 +39,13 @@ const NAV_ITEMS: { label: string; href: string; icon: LucideIcon }[] = [
   { label: "Messages", href: "/messages", icon: Send },
   { label: "WhatsApp", href: "/whatsapp", icon: MessagesSquare },
   { label: "Activity", href: "/activity", icon: Activity },
+  { label: "Documents", href: "/documents", icon: FileText },
+  { label: "Research", href: "/research", icon: Search },
   { label: "Job Tracker", href: "/jobs", icon: Briefcase },
   { label: "Tasks", href: "/tasks", icon: CalendarCheck },
   { label: "Learning", href: "/learning", icon: GraduationCap },
   { label: "Costs", href: "/costs", icon: Coins },
   { label: "Phone", href: "/connect", icon: Smartphone },
-  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {

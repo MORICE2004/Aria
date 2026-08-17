@@ -322,6 +322,67 @@ export type Briefing = {
   sections: BriefingSection[];
 };
 
+export type DocumentSummary = {
+  id: string;
+  filename: string;
+  format: string;
+  pages: number;
+  characters: number;
+  sections: string[];
+  facts_extracted: boolean;
+  created_at: string;
+};
+
+/**
+ * Something a model claims the document says. `quote` is the supporting text
+ * from the document itself — a fact ARIA cannot quote is not accepted.
+ */
+export type DocumentFact = {
+  id: string;
+  document_id: string;
+  fact: string;
+  category: string;
+  quote: string;
+  status: string;
+};
+
+export type DocumentAnswer = {
+  answer: string;
+  document: string;
+  ran_on: string;
+  scope: string;
+};
+
+export type ResearchEvidence = {
+  content: string;
+  citation: string;
+  source: string;
+  score: number;
+  reference_id: string;
+};
+
+/**
+ * A research report over ARIA's OWN corpus. `scope_note` states what was and
+ * was not searched — she has no web access, and that is said rather than
+ * implied.
+ */
+export type ResearchReport = {
+  question: string;
+  answer: string;
+  sub_questions: string[];
+  evidence: ResearchEvidence[];
+  sources_searched: string[];
+  scope_note: string;
+  ran_on: string;
+  remembered: boolean;
+};
+
+export type ResearchSources = {
+  available: string[];
+  unavailable: string[];
+  note: string;
+};
+
 /** How close ARIA is to being able to write convincingly as MORICE. */
 export type VoiceReadiness = {
   samples: number;
@@ -358,6 +419,49 @@ export const api = {
   listInsights: () => request<Insight[]>("/proactive"),
 
   getBriefing: (hours = 24) => request<Briefing>(`/briefing?hours=${hours}`),
+
+  listDocuments: () => request<DocumentSummary[]>("/documents"),
+  /** Multipart, so Content-Type is left to the browser — it must set the
+   *  boundary itself, and overriding it makes the upload unparseable. */
+  uploadDocument: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_URL}/documents`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: form,
+    });
+    if (!res.ok) {
+      const detail = await res
+        .json()
+        .then((b) => b.detail)
+        .catch(() => null);
+      throw new Error(detail || `Upload failed (${res.status})`);
+    }
+    return (await res.json()) as DocumentSummary;
+  },
+  deleteDocument: (id: string) =>
+    request<void>(`/documents/${id}`, { method: "DELETE" }),
+  extractFacts: (id: string) =>
+    request<DocumentFact[]>(`/documents/${id}/extract-facts`, { method: "POST" }),
+  listFacts: (id: string) => request<DocumentFact[]>(`/documents/${id}/facts`),
+  decideFact: (factId: string, accept: boolean) =>
+    request<DocumentFact>(`/documents/facts/${factId}/decide`, {
+      method: "POST",
+      body: JSON.stringify({ accept }),
+    }),
+  askDocument: (id: string, question: string) =>
+    request<DocumentAnswer>(`/documents/${id}/ask`, {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
+
+  research: (question: string, depth = 2, remember = false) =>
+    request<ResearchReport>("/research", {
+      method: "POST",
+      body: JSON.stringify({ question, depth, remember }),
+    }),
+  researchSources: () => request<ResearchSources>("/research/sources"),
   dismissInsight: (id: string) =>
     request<Insight>(`/proactive/${id}/dismiss`, { method: "POST" }),
   runProactiveChecks: () =>
