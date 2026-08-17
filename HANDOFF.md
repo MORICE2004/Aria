@@ -6,7 +6,7 @@ Updated 2026-08-17. Keep this current after every significant phase.
 
 # SESSION 2026-08-17 — read this part first
 
-**379 backend tests + 10 bridge tests passing. Frontend lint + build clean
+**395 backend tests + 10 bridge tests passing. Frontend lint + build clean
 (19 routes). Bridge containment check green.**
 
 ## The one thing only MORICE can do
@@ -42,7 +42,24 @@ works and only the phone link is missing. **Verified working today.**
 | Delivery | Stale outbound claims reclaimed; `--dry-run` proves the path; `/outbound/release` distinguishes "never attempted" from "failed" |
 | Briefing | New: `GET /briefing`, leading the Home page — what arrived, what ARIA did, what she is waiting on, what it cost |
 | Documents / Research | Both had working backends and no interface; now reachable at `/documents` and `/research` |
+| Chat commands | `briefing`, `why did you send that?`, `stop`, `pause`, `resume` route to the capability that owns them |
 | Nav | Removed `Settings`, which linked to a route that was never built |
+
+### Chat commands (§44)
+
+`src/commands.py`. Matching is deterministic — anchored patterns over short
+utterances — because a model judging "is this a command?" fails asymmetrically:
+missing one costs a click, while firing one on "I really need to stop
+procrastinating" silently presses the kill switch. Anything over 200 characters
+is a sentence, not an instruction.
+
+The stop command calls the endpoint's own handler rather than setting the flag
+itself: one kill switch, one audit trail, one cancellation of what is already
+queued. **Resume is deliberately refused** — stopping is instant, starting
+again stays a deliberate act, and ARIA replies with what to press.
+
+Commands answer from records and cost nothing: no model call, no embedding
+search, which is why the check runs before retrieval.
 
 ### Voice per audience (the mandatory §6 requirement)
 
@@ -102,10 +119,9 @@ To teach a specific audience: `--relationship partner` on
 In rough order of value:
 
 1. **Link the sender** (above). Nothing else unblocks real autonomy.
-2. **Capability routing in chat** (§44). `/conversations` is plain RAG chat:
-   "ARIA, briefing", "why did you send that?", "stop autonomous WhatsApp" are
-   answered conversationally rather than routed to the capability that owns
-   them. The briefing endpoint exists and chat does not call it.
+2. **More chat commands.** Five exist. Natural candidates next: "remember
+   this", "forget that", "research X", "what do you remember about Y" — each
+   already has a working endpoint behind it.
 3. **Relationship evidence.** The layer machinery is done; only his general
    voice has enough data behind it. Importing two or three chats with
    `--relationship` would populate the rest.
@@ -115,7 +131,7 @@ In rough order of value:
 
 ## Verified today
 
-- Full backend suite: 379 passed; bridge: 10 passed; containment check green.
+- Full backend suite: 395 passed; bridge: 10 passed; containment check green.
 - Frontend lint + production build clean, 19 routes.
 - Live `node sender.js --dry-run` against the real queue and real API.
 - Live `/style` showing the layered profile and the audience-free sample
@@ -124,6 +140,10 @@ In rough order of value:
   "2 sent".
 - Live `/research` returning a real answer with four citations naming real
   stored items, on `gemini-2.5-flash`.
+- Live chat commands: "ARIA, briefing" returned the real briefing, "why did you
+  send that?" explained the real queued reply and said it had not been
+  delivered, and "I really need to stop procrastinating on this project" fell
+  through to the model with the emergency stop untouched.
 - Migration `8da983278d91` applied to the live database after a backup
   (`backups/aria_2026-08-17_121009.sql`).
 - `/documents` and `/research` pages verified rendering against the dev server
