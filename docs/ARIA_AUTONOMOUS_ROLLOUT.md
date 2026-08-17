@@ -76,7 +76,27 @@ yours:
 2. corrections you made to her drafts, and
 3. messages you paste at **`/style` → "Teach ARIA my voice"**.
 
-Pasting is the fast path: copy a few real replies out of WhatsApp, one per
+**Importing a WhatsApp export is the fastest path.** Export a chat from
+WhatsApp (Settings → Export chat → Without media) and run:
+
+```bash
+apps/api/.venv/Scripts/python scripts/import-whatsapp-export.py \
+    --sender "Your Name As It Appears" --password "<ARIA password>" \
+    "path/to/WhatsApp Chat with X.zip"
+```
+
+Add `--dry-run` first to see what it would learn. Omit `--sender` and it
+lists the names it found.
+
+**Choose the chats carefully — register matters.** A partner chat and a work
+chat are different voices, and blending them into the global profile means
+ARIA may greet a colleague the way you greet your partner. This is not
+hypothetical: importing a chat whose contact name looked platonic put
+"my loveee" into the global profile at 10 occurrences, and it had to be
+removed. Import platonic chats for the global voice, then check
+`common_phrases` on `/style` and delete anything that does not belong.
+
+Pasting is the other option: copy a few real replies out of WhatsApp, one per
 line. Check progress at any time:
 
 ```bash
