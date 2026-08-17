@@ -159,21 +159,40 @@ that have already gone.
 
 ## Operating it
 
-```bash
+Windows PowerShell 5.1, which is the shell this repo is driven from, has **no
+`&&`** — it is a parser error, not a warning — and will not run a relative
+executable path without a `.\` prefix. Both scripts resolve their own locations
+internally, so absolute paths work from any directory and need no `cd` at all.
+Every command below is one line, runnable as written.
+
+```powershell
 # receive (safe: cannot send)
-./start-whatsapp-bridge.ps1
+C:\Users\MORICE\projects\aria\start-whatsapp-bridge.ps1
+```
 
+```powershell
 # check the whole delivery path without a linked device
-cd apps/wa-bridge && node sender.js --dry-run
+node C:\Users\MORICE\projects\aria\apps\wa-bridge\sender.js --dry-run
+```
 
-# deliver approved messages for real (needs the QR scan above)
-cd apps/wa-bridge && node sender.js
+```powershell
+# deliver approved messages for real (prints the QR to link the device)
+node C:\Users\MORICE\projects\aria\apps\wa-bridge\sender.js
+```
 
-# re-pair the observer
-rm -r apps/wa-bridge/auth && ./start-whatsapp-bridge.ps1
+```powershell
+# render that QR full size, when the terminal one will not scan
+C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe C:\Users\MORICE\projects\aria\scripts\render-whatsapp-qr.py
+```
 
-# re-pair the sender
-rm -r apps/wa-bridge/auth-sender && node apps/wa-bridge/sender.js
+```powershell
+# re-pair the observer: delete its device credentials, then start it again
+Remove-Item -Recurse -Force C:\Users\MORICE\projects\aria\apps\wa-bridge\auth
+```
+
+```powershell
+# re-pair the sender: same, for its separate device
+Remove-Item -Recurse -Force C:\Users\MORICE\projects\aria\apps\wa-bridge\auth-sender
 ```
 
 **Known risk:** automating WhatsApp violates its Terms of Service and numbers

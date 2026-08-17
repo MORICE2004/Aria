@@ -354,19 +354,31 @@ apps/api/tests/conftest.py             FakeRouter so tests never hit real models
 
 ## Commands
 
-```bash
-# start everything
-./start-aria.ps1
+**Windows PowerShell 5.1 has no `&&`** — it is a parser error, not a warning —
+and it will not run a relative executable path without `.\`. Every command
+below is one line and works from any directory.
 
-# backend tests
-cd apps/api && .venv/Scripts/python -m pytest -q
-
-# frontend checks
-cd apps/web && npm run lint && npm run build
-
-# check routing decisions
-cd apps/api && .venv/Scripts/python -c "from src.llm.router import ModelRouter, TaskClass; r=ModelRouter(); [print(t.value, '->', r.resolve(t).description) for t in TaskClass]"
+```powershell
+C:\Users\MORICE\projects\aria\start-aria.ps1
 ```
+
+```powershell
+C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe -m pytest -q
+```
+
+(pytest needs `apps/api` as the working directory — `Set-Location` there first,
+on its own line.)
+
+```powershell
+Set-Location C:\Users\MORICE\projects\aria\apps\web; npm run lint; npm run build
+```
+
+```powershell
+node C:\Users\MORICE\projects\aria\apps\wa-bridge\sender.js --dry-run
+```
+
+See `docs/ARIA_WHATSAPP.md` for the rest of the bridge commands, including
+linking the sender and rendering its QR.
 
 ## Tests performed
 

@@ -178,11 +178,12 @@ Silence is the honest answer until there is enough to measure.
 Style samples carry the audience they were written for
 (`MemoryItem.style_scope`):
 
-```bash
-# one chat export, one relationship
-apps/api/.venv/Scripts/python scripts/import-whatsapp-export.py \
-    --sender "Morice Magnus" --relationship partner --password "..." \
-    "C:/path/WhatsApp Chat with Ann.zip"
+One chat export, one relationship. PowerShell needs a backtick to continue a
+line, and an absolute path to the interpreter — a relative one is not run at
+all:
+
+```powershell
+C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe C:\Users\MORICE\projects\aria\scripts\import-whatsapp-export.py --sender "Morice Magnus" --relationship partner --password "..." "C:/path/WhatsApp Chat with Ann.zip"
 ```
 
 Or the audience picker on `/style`. Import a mixed set with no relationship to

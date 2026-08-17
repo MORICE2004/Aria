@@ -54,7 +54,7 @@ import makeWASocket, {
 import pino from "pino";
 import qrcode from "qrcode-terminal";
 import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -179,13 +179,17 @@ async function deliverApproved(sock) {
 function writeQrFallback(qr) {
   try {
     writeFileSync(QR_FILE, qr, "utf8");
+    // Absolute paths, because the reader is in whatever directory they happen
+    // to be in — and PowerShell will not run a relative executable path at all.
+    const repo = resolve(HERE, "..", "..");
     console.log("\n  Cannot scan the code above? In a SECOND terminal, run:");
     console.log(
-      "    apps/api/.venv/Scripts/python scripts/render-whatsapp-qr.py",
+      `    ${join(repo, "apps", "api", ".venv", "Scripts", "python.exe")} ` +
+        `${join(repo, "scripts", "render-whatsapp-qr.py")}`,
     );
     console.log(
-      `  It opens a full-size, scannable page and follows this code as it` +
-        ` rotates.\n`,
+      "  It opens a full-size, scannable page and follows this code as it" +
+        " rotates.\n",
     );
   } catch (err) {
     console.warn(`[sender] could not write ${basename(QR_FILE)}: ${err?.message}`);
