@@ -33,9 +33,18 @@ data/
 # Hook config holds the ingest secret
 openclaw-hook/config.json
 
-# WhatsApp bridge: session credentials and secret
+# WhatsApp bridge: session credentials and secret.
+# Two auth directories, because the observer and the sender link as separate
+# devices. auth-sender/ was missing here until the sender was first linked —
+# it holds credentials that can send messages as MORICE.
 apps/wa-bridge/auth/
+apps/wa-bridge/auth-sender/
 apps/wa-bridge/config.json
+# The live pairing code and the page that renders it. Short-lived (WhatsApp
+# rotates it every ~20s) but a credential while it lives: anyone who scans it
+# links a device to the account.
+apps/wa-bridge/qr-current.txt
+apps/wa-bridge/qr-current.html
 # Spooled messages are real personal conversation content awaiting delivery.
 apps/wa-bridge/spool/
 backups/
