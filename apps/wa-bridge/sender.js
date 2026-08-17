@@ -28,6 +28,22 @@
  *   node sender.js
  * Not started by start-whatsapp-bridge.ps1 — observing is the default, and
  * sending should require a deliberate act.
+ *
+ * ─── Dry run ─────────────────────────────────────────────────────────────
+ *   node sender.js --dry-run
+ *
+ * Links no device and sends nothing. It claims real approved messages from
+ * ARIA, prints exactly what would go out and to whom, then hands each one
+ * back to the queue undelivered.
+ *
+ * This exists because linking the sender needs MORICE's phone, and until he
+ * scans that QR there is no way to tell a broken pipeline from an unlinked
+ * one. A dry run answers that: if messages come back with their handles and
+ * bodies intact, everything between the autonomy engine and the WhatsApp
+ * socket works, and the only unproven link is the socket itself.
+ *
+ * It is deliberately NOT a simulated success. Nothing reports "sent" for a
+ * message that was not sent.
  */
 
 import makeWASocket, {
@@ -62,9 +78,15 @@ function loadConfig() {
     console.error("[sender] No shared secret. Set it in config.json.");
     process.exit(1);
   }
-  return { claimUrl: `${base}/outbound/claim`, confirmUrl: `${base}/outbound/confirm`, secret };
+  return {
+    claimUrl: `${base}/outbound/claim`,
+    confirmUrl: `${base}/outbound/confirm`,
+    releaseUrl: `${base}/outbound/release`,
+    secret,
+  };
 }
 
+const DRY_RUN = process.argv.includes("--dry-run");
 const cfg = loadConfig();
 const log = pino({ level: "warn" });
 
@@ -103,6 +125,24 @@ async function deliverApproved(sock) {
   if (!claimed?.messages?.length) return;
 
   for (const message of claimed.messages) {
+    if (sock === null) {
+      // Dry run. Report what would happen, then give the message back so it
+      // is still there to send for real once a device is linked.
+      console.log(
+        `[sender] WOULD SEND to ${message.handle}: "${message.body}"`,
+      );
+      const released = await post(cfg.releaseUrl, {
+        id: message.id,
+        reason: "dry run: no device linked, nothing was sent",
+      });
+      console.log(
+        released?.status === "pending"
+          ? "           returned to the queue, still pending"
+          : "           WARNING: could not return it to the queue",
+      );
+      continue;
+    }
+
     try {
       await sock.sendMessage(message.handle, { text: message.body });
       await post(cfg.confirmUrl, { id: message.id, ok: true });
@@ -179,10 +219,28 @@ function poll(sock) {
   tick();
 }
 
-console.log("\n  ARIA WhatsApp sender");
-console.log(`  polling ${cfg.claimUrl}`);
-console.log("  This process can send. The observer still cannot.\n");
-start().catch((err) => {
-  console.error("[sender] fatal:", err);
-  process.exit(1);
-});
+if (DRY_RUN) {
+  console.log("\n  ARIA WhatsApp sender - DRY RUN");
+  console.log(`  claiming from ${cfg.claimUrl}`);
+  console.log("  No device is linked and nothing will be sent.\n");
+  // One pass, then stop: this is a check, not a service. sock === null is
+  // what deliverApproved reads as "dry run".
+  deliverApproved(null)
+    .then(() => {
+      console.log("\n  Dry run complete.");
+      console.log("  Anything shown above is approved and ready to deliver.");
+      console.log("  Nothing above was sent, and nothing was lost.\n");
+    })
+    .catch((err) => {
+      console.error("[sender] dry run failed:", err?.message || err);
+      process.exit(1);
+    });
+} else {
+  console.log("\n  ARIA WhatsApp sender");
+  console.log(`  polling ${cfg.claimUrl}`);
+  console.log("  This process can send. The observer still cannot.\n");
+  start().catch((err) => {
+    console.error("[sender] fatal:", err);
+    process.exit(1);
+  });
+}

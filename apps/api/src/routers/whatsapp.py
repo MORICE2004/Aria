@@ -1024,6 +1024,30 @@ async def confirm_outbound(
     return {"id": message.id, "status": message.status}
 
 
+class ReleaseSendIn(BaseModel):
+    id: str
+    reason: str = Field(default="not attempted", max_length=500)
+
+
+@ingest_router.post("/outbound/release")
+async def release_outbound(
+    body: ReleaseSendIn,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """The sender hands a claimed message back without having sent it.
+
+    Used when a sender shuts down cleanly, and by `sender.js --dry-run`, which
+    exercises this whole path with no linked device. Kept separate from
+    /outbound/confirm so "never attempted" is never recorded as "failed".
+    """
+    _require_ingest_secret(request)
+    message = await sending.release_claim(session, body.id, reason=body.reason)
+    if message is None:
+        raise HTTPException(404, "Outbound message not found")
+    return {"id": message.id, "status": message.status}
+
+
 @router.get("/outbound")
 async def list_outbound(
     status: str | None = None,

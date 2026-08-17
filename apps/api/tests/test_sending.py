@@ -387,6 +387,118 @@ def test_the_outbound_queue_requires_the_shared_secret(client: TestClient, auth_
     assert client.post("/whatsapp/outbound/claim").status_code in (401, 503)
 
 
+def test_a_message_never_attempted_returns_to_the_queue_undelivered(
+    client: TestClient, ingest_secret, auth_enabled
+) -> None:
+    """Releasing is not failing.
+
+    A sender shutting down, or running --dry-run with no linked device, has not
+    attempted anything. Recording that as a failed send would put a lie in the
+    audit trail and make a queue of perfectly deliverable messages look broken.
+    """
+    _ready_contact(client)
+    _incoming(client, "hey")
+    claimed = client.post(
+        "/whatsapp/outbound/claim",
+        headers={"X-ARIA-Ingest-Secret": ingest_secret},
+    ).json()["messages"]
+
+    released = client.post(
+        "/whatsapp/outbound/release",
+        json={"id": claimed[0]["id"], "reason": "dry run: no device linked"},
+        headers={"X-ARIA-Ingest-Secret": ingest_secret},
+    )
+    assert released.json()["status"] == "pending"
+
+    outbound = client.get("/whatsapp/outbound").json()[0]
+    assert outbound["status"] == "pending"
+    assert outbound["attempts"] == 0  # nothing was attempted
+    assert outbound["sent_at"] is None
+
+    # And it is still there to be delivered for real.
+    again = client.post(
+        "/whatsapp/outbound/claim",
+        headers={"X-ARIA-Ingest-Secret": ingest_secret},
+    ).json()["messages"]
+    assert [m["id"] for m in again] == [claimed[0]["id"]]
+
+    # Audited against the send's own gateway request, alongside the approval
+    # and the queueing — the whole life of the message in one trail.
+    request_id = [
+        a for a in client.get("/actions").json() if a["action_type"] == "whatsapp.send"
+    ][0]["id"]
+    events = [e["event"] for e in client.get(f"/actions/{request_id}/audit").json()]
+    assert "send_released" in events
+
+
+def test_releasing_an_unknown_message_is_a_404(
+    client: TestClient, ingest_secret, auth_enabled
+) -> None:
+    assert (
+        client.post(
+            "/whatsapp/outbound/release",
+            json={"id": "nope"},
+            headers={"X-ARIA-Ingest-Secret": ingest_secret},
+        ).status_code
+        == 404
+    )
+
+
+def test_a_message_abandoned_by_a_dead_sender_is_reclaimed(
+    client: TestClient, ingest_secret, auth_enabled
+) -> None:
+    """The inbound queue reclaims abandoned rows; the outbound one must too.
+
+    A sender killed between claiming and confirming would otherwise leave the
+    message in `claimed` forever — invisible to the next sender that starts,
+    and never delivered, with nothing to show it had been lost.
+    """
+    import asyncio
+    from datetime import timedelta
+
+    from sqlalchemy import select
+
+    from src.core import clock
+    from src.models import OutboundMessage
+    from src.whatsapp import sending
+
+    _ready_contact(client)
+    _incoming(client, "hey")
+    claimed = client.post(
+        "/whatsapp/outbound/claim",
+        headers={"X-ARIA-Ingest-Secret": ingest_secret},
+    ).json()["messages"]
+    assert len(claimed) == 1
+
+    # Still claimed, so a second sender must not touch it.
+    assert (
+        client.post(
+            "/whatsapp/outbound/claim",
+            headers={"X-ARIA-Ingest-Secret": ingest_secret},
+        ).json()["messages"]
+        == []
+    )
+
+    async def _age_the_claim() -> None:
+        async with client.session_maker() as session:
+            message = (
+                await session.execute(select(OutboundMessage))
+            ).scalars().one()
+            message.claimed_at = clock.now() - timedelta(
+                seconds=sending.STALE_CLAIM_SECONDS + 60
+            )
+            await session.commit()
+
+    asyncio.run(_age_the_claim())
+
+    reclaimed = client.post(
+        "/whatsapp/outbound/claim",
+        headers={"X-ARIA-Ingest-Secret": ingest_secret},
+    ).json()["messages"]
+    assert [m["id"] for m in reclaimed] == [claimed[0]["id"]]
+    assert client.get("/whatsapp/outbound").json()[0]["attempts"] == 2
+
+
 # ---------- learning from autonomous responses ----------
 
 def test_a_correction_teaches_and_counts_against_reliability(

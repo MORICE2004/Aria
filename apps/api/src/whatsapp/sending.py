@@ -32,7 +32,7 @@ than promised in a comment:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,6 +51,17 @@ from src.whatsapp import decision
 logger = logging.getLogger(__name__)
 
 ACTION_TYPE = "whatsapp.send"
+
+# A message the sender claimed and then never reported on — because the process
+# was killed, or the machine slept, or WhatsApp hung mid-send — would sit in
+# `claimed` forever, invisible to the next sender that starts. The inbound queue
+# already reclaims abandoned rows; this is the same guarantee on the way out.
+#
+# Generous, because the failure this must not cause is a DOUBLE SEND: if the
+# original sender is merely slow rather than dead, reclaiming its message means
+# saying the same thing twice to a real person. Baileys either delivers or
+# throws in seconds, so five minutes of silence means the process is gone.
+STALE_CLAIM_SECONDS = 300
 
 
 class SendBlocked(Exception):
@@ -209,18 +220,34 @@ async def claim_outbound(session: AsyncSession, limit: int = 10) -> list[dict]:
         await session.commit()
         return []
 
+    now = datetime.now(timezone.utc)
+    stale_before = now - timedelta(seconds=STALE_CLAIM_SECONDS)
+
     rows = (
         await session.execute(
             select(OutboundMessage)
-            .where(OutboundMessage.status == "pending")
+            .where(
+                (OutboundMessage.status == "pending")
+                | (
+                    (OutboundMessage.status == "claimed")
+                    & (OutboundMessage.claimed_at < stale_before)
+                )
+            )
             .order_by(OutboundMessage.created_at)
             .limit(limit)
         )
     ).scalars()
 
     claimed = []
-    now = datetime.now(timezone.utc)
     for message in rows:
+        if message.status == "claimed":
+            logger.warning(
+                "Reclaiming outbound message %s to %s, abandoned by a sender "
+                "that never reported back (attempt %d)",
+                message.id,
+                message.handle,
+                message.attempts,
+            )
         message.status = "claimed"
         message.claimed_at = now
         message.attempts += 1
@@ -229,6 +256,41 @@ async def claim_outbound(session: AsyncSession, limit: int = 10) -> list[dict]:
         )
     await session.commit()
     return claimed
+
+
+async def release_claim(
+    session: AsyncSession, message_id: str, *, reason: str
+) -> OutboundMessage | None:
+    """Hand a claimed message back undelivered, for a later attempt.
+
+    Distinct from `confirm_sent(ok=False)`, which records a delivery that was
+    attempted and failed. This records one that was never attempted — a sender
+    shutting down cleanly, or running in dry-run mode with no linked device.
+    Marking those as failures would put a lie in the audit trail and, worse,
+    make a queue of perfectly deliverable messages look broken.
+    """
+    message = await session.get(OutboundMessage, message_id)
+    if message is None:
+        return None
+
+    message.status = "pending"
+    message.claimed_at = None
+    message.last_error = reason[:2000]
+    # Not an attempt: nothing was sent, so it must not count against the
+    # message's history the way a real failure does.
+    message.attempts = max(0, message.attempts - 1)
+
+    session.add(
+        AuditEvent(
+            action_request_id=message.action_request_id or "whatsapp",
+            event="send_released",
+            detail=f"{message.handle}: returned to the queue undelivered ({reason})"[
+                :500
+            ],
+        )
+    )
+    await session.commit()
+    return message
 
 
 async def confirm_sent(
