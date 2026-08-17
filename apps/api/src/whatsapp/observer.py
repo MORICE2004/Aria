@@ -20,6 +20,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -212,7 +213,7 @@ async def observe(
             contact, message, mode, reason, classification, None, outcome
         )
 
-    draft = await _prepare_draft(
+    draft, draft_row = await _prepare_draft(
         session, model_router, contact=contact, incoming=body,
         classification=classification,
     )
@@ -238,6 +239,7 @@ async def observe(
             outcome=final_outcome,
             routed=routed,
             inbound_message_id=message.id,
+            draft_row=draft_row,
         )
 
     return Observation(
@@ -255,6 +257,7 @@ async def _queue_autonomous_reply(
     outcome,
     routed,
     inbound_message_id: str,
+    draft_row=None,
 ) -> str:
     """Record an autonomous reply and submit it to the Action Gateway.
 
@@ -284,6 +287,15 @@ async def _queue_autonomous_reply(
         send_status="queued",
     )
     session.add(response)
+
+    # The draft ARIA wrote on the way here is now an autonomous reply, not
+    # something waiting for MORICE. Leaving it "pending" would ask him to
+    # review a message ARIA has already handled — and would have him see the
+    # same reply twice, once as work to do and once as work already done.
+    if draft_row is not None:
+        draft_row.status = "autonomous"
+        draft_row.decided_at = datetime.now(timezone.utc)
+
     await session.commit()
 
     await sending.request_send(
@@ -304,8 +316,11 @@ async def _prepare_draft(
     contact: Contact,
     incoming: str,
     classification: Classification | None,
-) -> str | None:
+) -> tuple[str | None, "MessageDraft | None"]:
     """Write a reply in MORICE's learned voice and store it for review.
+
+    Returns the text and the stored row, so the caller can mark the draft as
+    handled if it goes out autonomously rather than to the review queue.
 
     Sensitive messages (money, contracts, legal, emotional...) are
     deliberately NOT drafted. A plausible-sounding draft on a sensitive topic
@@ -321,7 +336,7 @@ async def _prepare_draft(
             "Skipping draft for %s: sensitive (%s)",
             contact.handle, ", ".join(classification.sensitive),
         )
-        return None
+        return None, None
 
     # Recent history gives the reply context; oldest-first reads naturally.
     history = list(reversed(await recent_messages(session, contact.id, limit=8)))
@@ -342,24 +357,23 @@ async def _prepare_draft(
         )
     except Exception as exc:  # noqa: BLE001 — a failed draft must not lose the message
         logger.warning("Draft generation failed for %s: %s", contact.handle, exc)
-        return None
+        return None, None
 
     if not text:
-        return None
+        return None, None
 
-    session.add(
-        MessageDraft(
-            contact_id=contact.id,
-            incoming=incoming,
-            draft=text,
-            rationale=(
-                f"{contact.relationship} contact; "
-                f"{classification.intent if classification else 'no classification'}"
-            )[:400],
-        )
+    row = MessageDraft(
+        contact_id=contact.id,
+        incoming=incoming,
+        draft=text,
+        rationale=(
+            f"{contact.relationship} contact; "
+            f"{classification.intent if classification else 'no classification'}"
+        )[:400],
     )
+    session.add(row)
     await session.commit()
-    return text
+    return text, row
 
 
 async def recent_messages(

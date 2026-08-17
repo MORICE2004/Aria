@@ -1,15 +1,18 @@
 /**
  * Home — ARIA's command center.
  *
- * Greeting, system status (live /health check), and stat tiles pulled from
- * the real APIs: pending approvals, open tasks, tracked jobs, memories.
- * Everything links into its section.
+ * The briefing comes first, because the question this page exists to answer is
+ * "what happened while I was away?" — and it is the same question whether the
+ * page is open on a phone or a desktop. Status and tiles follow it.
+ *
+ * Everything shown is real: the briefing is assembled from records by the API,
+ * the status is a live /health check, the tiles are counts from real endpoints.
  */
 "use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, API_URL } from "../lib/api";
+import { api, API_URL, type Briefing } from "../lib/api";
 
 type ApiStatus =
   | { state: "loading" }
@@ -34,6 +37,12 @@ function greeting(): string {
 export default function HomePage() {
   const [status, setStatus] = useState<ApiStatus>({ state: "loading" });
   const [stats, setStats] = useState<Stats | null>(null);
+  const [briefing, setBriefing] = useState<Briefing | null>(null);
+  const [hours, setHours] = useState(24);
+
+  useEffect(() => {
+    api.getBriefing(hours).then(setBriefing).catch(() => setBriefing(null));
+  }, [hours]);
 
   useEffect(() => {
     fetch(`${API_URL}/health`)
@@ -87,6 +96,83 @@ export default function HomePage() {
           machine as you without your explicit approval.
         </p>
       </section>
+
+      {/* Briefing. First, and always shown — including when there is nothing
+          to report, because "nothing happened" is the answer he came for. */}
+      {briefing && (
+        <section className="glass mb-6 rounded-xl p-5">
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-medium">
+              While you were away
+              <span className="ml-2 text-xs text-zinc-500">
+                last {briefing.hours === 24 ? "24 hours" : `${briefing.hours}h`}
+              </span>
+            </h2>
+            <div className="flex gap-1">
+              {[6, 24, 72].map((h) => (
+                <button
+                  key={h}
+                  onClick={() => setHours(h)}
+                  className={`rounded-full px-2.5 py-0.5 text-[11px] ring-1 ${
+                    hours === h
+                      ? "bg-cyan-500/20 text-cyan-200 ring-cyan-500/40"
+                      : "text-zinc-500 ring-white/10 hover:text-zinc-300"
+                  }`}
+                >
+                  {h}h
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-sm text-zinc-200">{briefing.headline}</p>
+
+          {briefing.quiet ? (
+            <p className="mt-2 text-xs text-zinc-500">
+              Nothing is being hidden here — there are no records in this
+              period.
+            </p>
+          ) : (
+            <ul className="mt-4 space-y-3">
+              {briefing.sections.map((section) => (
+                <li key={section.key}>
+                  <p className="flex items-baseline gap-2 text-xs">
+                    <span
+                      aria-hidden
+                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                        section.needs_attention ? "bg-amber-400" : "bg-zinc-600"
+                      }`}
+                    />
+                    <span className="font-medium text-zinc-300">
+                      {section.heading}
+                    </span>
+                    <span className="text-zinc-500">{section.summary}</span>
+                  </p>
+                  {section.items.length > 0 && (
+                    <ul className="ml-3.5 mt-1 space-y-1 border-l border-white/10 pl-3">
+                      {section.items.map((item, i) => (
+                        <li key={`${section.key}-${i}`} className="text-xs">
+                          <Link
+                            href={item.link || "/"}
+                            className="text-zinc-400 hover:text-cyan-300"
+                          >
+                            {item.title}
+                          </Link>
+                          {item.detail && (
+                            <span className="ml-1 text-zinc-600">
+                              — {item.detail}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* System status */}
       <section className="glass mb-6 flex items-center gap-3 rounded-xl px-5 py-4">

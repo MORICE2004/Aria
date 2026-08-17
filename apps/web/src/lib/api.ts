@@ -295,6 +295,33 @@ export type Insight = {
   created_at: string;
 };
 
+/**
+ * An account of a period: what arrived, what ARIA did, what she is waiting on.
+ * Assembled from records by the API — never summarised by a model — so
+ * `quiet: true` means genuinely nothing happened, not that ARIA could not tell.
+ */
+export type BriefingItem = {
+  title: string;
+  detail: string;
+  link: string;
+  reference_id: string;
+};
+export type BriefingSection = {
+  key: string;
+  heading: string;
+  summary: string;
+  needs_attention: boolean;
+  items: BriefingItem[];
+};
+export type Briefing = {
+  since: string;
+  until: string;
+  hours: number;
+  headline: string;
+  quiet: boolean;
+  sections: BriefingSection[];
+};
+
 /** How close ARIA is to being able to write convincingly as MORICE. */
 export type VoiceReadiness = {
   samples: number;
@@ -329,6 +356,8 @@ export const api = {
     }),
 
   listInsights: () => request<Insight[]>("/proactive"),
+
+  getBriefing: (hours = 24) => request<Briefing>(`/briefing?hours=${hours}`),
   dismissInsight: (id: string) =>
     request<Insight>(`/proactive/${id}/dismiss`, { method: "POST" }),
   runProactiveChecks: () =>

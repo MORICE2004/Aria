@@ -19,6 +19,7 @@ from src.db import init_db
 from src.routers import (
     actions,
     auth,
+    briefing,
     chat,
     communication,
     connect,
@@ -180,6 +181,7 @@ def create_app() -> FastAPI:
     app.include_router(style.router, dependencies=protected)
     app.include_router(costs.router, dependencies=protected)
     app.include_router(proactive.router, dependencies=protected)
+    app.include_router(briefing.router, dependencies=protected)
     app.include_router(documents.router, dependencies=protected)
     app.include_router(research.router, dependencies=protected)
     # Secret-authenticated, called by the local OpenClaw gateway — not JWT.
