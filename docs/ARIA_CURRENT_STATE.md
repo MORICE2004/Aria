@@ -3,6 +3,13 @@
 Audited 2026-08-16, against commit `daaf49a`. This document describes **reality**,
 not intent. Anything listed as working was verified by running it.
 
+> **This is a point-in-time audit, deliberately not updated in place** — its
+> value is that it records what was true on that date against that commit.
+> Several things have shipped since, including autonomous decisions and
+> queueing, relationship-scoped voices, the daily briefing, and the documents
+> and research interfaces. Where this file and `HANDOFF.md` disagree, HANDOFF
+> is newer.
+
 Audit method: full source tree inspection, debt-marker grep
 (TODO/FIXME/NotImplemented/stub/placeholder/hardcoded/deprecated), test suite
 execution, live environment probes, git history review.

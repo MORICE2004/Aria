@@ -120,12 +120,88 @@ accumulated and a preference could never become confident. Each lesson now
 gets its own dimension (`edit:<lesson>`). Caught by a test asserting that six
 identical edits reach evidence count 6 — a weaker test would have missed it.
 
+## One voice per audience — implemented 2026-08-17
+
+MORICE does not write to his boss the way he writes to a friend, and the
+directive states the hard requirement: *a phrase learned from a romantic
+conversation must never become a global personality rule.*
+
+### Words and shape are different kinds of evidence
+
+| Kind | Dimensions | Generalises? |
+|---|---|---|
+| **Shape** | `avg_words`, `avg_sentences`, `emoji_rate`, `question_rate`, `exclamation_rate`, `capitalisation`, `language` | Yes — he is a short, lowercase, code-switching writer with everyone |
+| **Words** | `greeting`, `signoff`, `common_phrases` | No — these belong to the person he was talking to |
+
+`style.LEXICAL_DIMENSIONS` is that second row, and `style.is_lexical()` is the
+test the learner applies.
+
+So the **global** scope measures shape from everything he has written, and
+words only from writing with no particular audience — samples he offered as
+examples of how he writes in general. A lexical dimension with no
+audience-free evidence behind it is **deleted** from the global scope rather
+than left standing: a phrase learned before scoping existed must not survive
+as a general rule.
+
+Explicit rules are deliberately exempt. He chose their scope himself when he
+stated them, and an instruction he gave outweighs a precaution against a
+pattern ARIA inferred.
+
+### The layers
+
+```
+global                    how he writes in general
+  + relationship:<type>   how he writes to friends / colleagues / a partner
+  + contact:<id>          how he writes to one person
+  + current conversation  the recent transcript (per message, not stored)
+  + current intent        what this reply has to achieve (per message)
+= the voice of one reply
+```
+
+`learning.scopes_for(contact)` returns the first three, least specific first;
+later layers override earlier ones on the same dimension.
+`build_profile_block(..., intent=...)` supplies the last two. Every line in
+the assembled block names the layer it came from — when a reply sounds wrong,
+the first question is where ARIA got it, and a profile that cannot answer that
+cannot be corrected.
+
+### Thin audiences are left unmeasured
+
+`MIN_SAMPLES_FOR_SCOPE = 12`. Below that, `refresh_all_scopes` writes nothing
+for that audience. This is not caution for its own sake: every stored scope is
+averaged into the confidence the autonomy gate reads, so three observed
+messages to his boss would make ARIA *less* sure of a voice she knows well.
+Silence is the honest answer until there is enough to measure.
+
+### Teaching a specific audience
+
+Style samples carry the audience they were written for
+(`MemoryItem.style_scope`):
+
+```bash
+# one chat export, one relationship
+apps/api/.venv/Scripts/python scripts/import-whatsapp-export.py \
+    --sender "Morice Magnus" --relationship partner --password "..." \
+    "C:/path/WhatsApp Chat with Ann.zip"
+```
+
+Or the audience picker on `/style`. Import a mixed set with no relationship to
+teach his general voice; import each close relationship separately.
+
+The drafting agent also filters the raw style examples it pastes into a prompt
+to the audience being written to — an unfiltered similarity search happily
+returned his most intimate export while the profile above it was being
+careful.
+
+### Live effect on his real profile
+
+Re-measuring produced a general profile reporting **160 samples for
+vocabulary against 172 for structure**: the twelve pieces of writing
+attributable to one conversation still shape his rhythm and no longer supply
+his phrases. Voice confidence was unchanged at 0.95.
+
 ## Not yet done
 
-- **Relationship-scoped profiles.** The scope system supports
-  `relationship:friend` and `contact:<id>`, and profile assembly already
-  prefers the most specific scope — but only `global` and `contact:` are
-  currently written. Per-relationship measurement is the next increment.
 - **LLM-judged dimensions** (formality, warmth, humour) — deliberately
   deferred: they cannot be counted, so they would need a different and more
   careful confidence treatment.
