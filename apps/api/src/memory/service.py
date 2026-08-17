@@ -30,6 +30,10 @@ class SearchHit:
     kind: str
     content: str
     score: float
+    # Style samples only: the audience this writing represents. Carried through
+    # search so a caller can tell whose voice it is holding — the drafting
+    # agent uses it to keep one person's phrases out of another's reply.
+    style_scope: str = ""
 
 
 class MemoryService:
@@ -45,6 +49,7 @@ class MemoryService:
         kind: str,
         explicit: bool = False,
         provenance: str = "",
+        style_scope: str = "",
     ) -> MemoryItem:
         """Store a memory item: judge it, chunk it, embed the chunks, save.
 
@@ -64,6 +69,7 @@ class MemoryService:
             importance=verdict.importance,
             expires_at=verdict.expires_at,
             provenance=provenance or verdict.reason,
+            style_scope=style_scope,
         )
         session.add(item)
         await session.flush()  # assigns item.id before we reference it below
@@ -100,6 +106,7 @@ class MemoryService:
                     kind=item.kind,
                     content=chunk.content,
                     score=round(1.0 - dist, 4),
+                    style_scope=item.style_scope,
                 )
                 for chunk, item, dist in result.all()
             ]
@@ -117,6 +124,7 @@ class MemoryService:
                 kind=item.kind,
                 content=chunk.content,
                 score=round(_cosine_similarity(query_vector, chunk.embedding), 4),
+                style_scope=item.style_scope,
             )
             for chunk, item in result.all()
         ]

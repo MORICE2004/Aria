@@ -31,10 +31,24 @@ class PatternOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ScopeOut(BaseModel):
+    """One layer of ARIA's voice, and what she has learned in it."""
+
+    scope: str
+    description: str
+    pattern_count: int
+    evidence: int
+    confidence: float
+    # True for the layers that would shape a reply to the contact being viewed.
+    applies: bool
+
+
 class ProfileOut(BaseModel):
     patterns: list[PatternOut]
     # Exactly what gets injected into drafting prompts — no hidden influence.
     prompt_block: str
+    # The layers themselves: general voice, per relationship type, per person.
+    scopes: list[ScopeOut]
 
 
 class FeedbackIn(BaseModel):
@@ -63,13 +77,35 @@ class RefreshOut(BaseModel):
 
 @router.get("", response_model=ProfileOut)
 async def get_profile(
-    contact_id: str | None = None, session: AsyncSession = Depends(get_session)
+    contact_id: str | None = None,
+    scope: str | None = None,
+    session: AsyncSession = Depends(get_session),
 ):
-    """The learned profile, plus the exact text ARIA uses when drafting."""
+    """The learned profile, plus the exact text ARIA uses when drafting.
+
+    `contact_id` shows the prompt she would actually build for that person —
+    general voice, their relationship type, and them specifically, layered.
+    `scope` filters the pattern list to one layer.
+    """
     contact = await session.get(Contact, contact_id) if contact_id else None
-    patterns = await learning.list_patterns(session)
+    patterns = await learning.list_patterns(session, scope)
     block = await learning.build_profile_block(session, contact)
-    return ProfileOut(patterns=patterns, prompt_block=block)
+    applicable = set(learning.scopes_for(contact))
+    return ProfileOut(
+        patterns=patterns,
+        prompt_block=block,
+        scopes=[
+            ScopeOut(
+                scope=summary.scope,
+                description=summary.description,
+                pattern_count=summary.pattern_count,
+                evidence=summary.evidence,
+                confidence=summary.confidence,
+                applies=summary.scope in applicable,
+            )
+            for summary in await learning.summarise_scopes(session)
+        ],
+    )
 
 
 @router.post("/refresh", response_model=RefreshOut)
@@ -87,6 +123,28 @@ async def refresh(
     return RefreshOut(dimensions=dimensions, sample_size=sample)
 
 
+@router.post("/refresh-all")
+async def refresh_all(session: AsyncSession = Depends(get_session)):
+    """Re-measure every layer: general, each relationship type, each person.
+
+    Reports the scopes that had enough evidence to measure. Scopes missing from
+    the result are not failures — they are audiences ARIA has not seen enough
+    of his writing to describe honestly.
+    """
+    written = await learning.refresh_all_scopes(session)
+    return {
+        "scopes": [
+            {
+                "scope": scope,
+                "description": learning.describe_scope(scope),
+                "samples": samples,
+            }
+            for scope, samples in written.items()
+        ],
+        "minimum_samples_per_scope": learning.MIN_SAMPLES_FOR_SCOPE,
+    }
+
+
 class SamplesIn(BaseModel):
     """Real messages MORICE has sent, pasted in bulk."""
 
@@ -94,6 +152,12 @@ class SamplesIn(BaseModel):
     # replies is the fastest honest way to teach ARIA a voice.
     text: str = Field(min_length=1, max_length=100_000)
     label: str = Field(default="pasted messages", max_length=200)
+    # Who this writing was for. A chat export is one conversation with one
+    # person, so saying "partner" or "boss" here keeps its phrases where they
+    # belong instead of letting them into every reply ARIA writes. Omitted
+    # means the paste represents how he writes in general.
+    relationship: str | None = Field(default=None, max_length=40)
+    contact_id: str | None = None
 
 
 class SamplesOut(BaseModel):
@@ -102,6 +166,9 @@ class SamplesOut(BaseModel):
     confidence: float
     ready_for_autonomy: bool
     note: str
+    # Which layer of ARIA's voice this paste taught.
+    scope: str
+    scope_description: str
 
 
 @router.post("/samples", response_model=SamplesOut, status_code=201)
@@ -127,6 +194,15 @@ async def add_samples(
     if not lines:
         raise HTTPException(422, "No messages found — one message per line.")
 
+    scope = "global"
+    if body.contact_id:
+        contact = await session.get(Contact, body.contact_id)
+        if contact is None:
+            raise HTTPException(404, "Contact not found")
+        scope = f"contact:{contact.id}"
+    elif body.relationship:
+        scope = learning.scope_for_relationship(body.relationship)
+
     # Stored as a style memory so the sample is inspectable and deletable
     # like everything else ARIA knows, rather than vanishing into statistics.
     await memory_service.ingest(
@@ -135,24 +211,46 @@ async def add_samples(
         content="\n".join(lines),
         kind="style",
         explicit=True,
-        provenance="you pasted these as examples of how you write",
+        provenance=(
+            "you pasted these as examples of how you write "
+            f"({learning.describe_scope(scope)})"
+        ),
+        style_scope=scope,
     )
 
-    await learning.refresh_from_messages(session)
+    written = await learning.refresh_all_scopes(session)
     state = await _voice_state(session)
+
+    if scope == "global":
+        note = (
+            "ARIA now writes like you confidently enough to reply unattended, "
+            "for contacts where you have enabled it."
+            if state["ready_for_autonomy"]
+            else f"About {state['samples_needed']} more of your messages would "
+            "reach the confidence needed for autonomous replies."
+        )
+    elif scope in written:
+        note = (
+            f"Learned as {learning.describe_scope(scope)}, from "
+            f"{written[scope]} samples. These phrases will not appear in "
+            "replies to anyone else."
+        )
+    else:
+        note = (
+            f"Stored as {learning.describe_scope(scope)}, but "
+            f"{learning.MIN_SAMPLES_FOR_SCOPE} samples are needed before ARIA "
+            "will state a pattern for this audience — fewer than that is an "
+            "impression, not a measurement."
+        )
 
     return SamplesOut(
         added=len(lines),
         total_samples=state["samples"],
         confidence=state["confidence"],
         ready_for_autonomy=state["ready_for_autonomy"],
-        note=(
-            "ARIA now writes like you confidently enough to reply unattended, "
-            "for contacts where you have enabled it."
-            if state["ready_for_autonomy"]
-            else f"About {state['samples_needed']} more of your messages would "
-            "reach the confidence needed for autonomous replies."
-        ),
+        note=note,
+        scope=scope,
+        scope_description=learning.describe_scope(scope),
     )
 
 

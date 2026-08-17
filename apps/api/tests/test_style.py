@@ -349,3 +349,174 @@ def test_readiness_reports_the_number_the_engine_actually_gates_on(
 
 def test_empty_samples_are_refused(client: TestClient) -> None:
     assert client.post("/style/samples", json={"text": "   \n  \n"}).status_code == 422
+
+
+# ---------- one voice per audience ----------
+#
+# The product directive is explicit about this: "A phrase learned from a
+# romantic conversation must NEVER become a global personality rule." These
+# tests are the enforcement of that sentence.
+
+def _contact(client: TestClient, name: str, relationship: str) -> dict:
+    created = client.post(
+        "/whatsapp/contacts",
+        json={"name": name, "handle": f"{name.lower()}@s.whatsapp.net"},
+    ).json()
+    client.patch(
+        f"/whatsapp/contacts/{created['id']}", json={"relationship": relationship}
+    )
+    return created
+
+
+def _samples(count: int, phrase: str) -> str:
+    """Enough distinct messages to pass the per-scope evidence minimum."""
+    return "\n".join(f"{phrase} number {i}" for i in range(count))
+
+
+def test_a_partners_phrases_never_reach_the_global_voice(client: TestClient) -> None:
+    client.post(
+        "/style/samples",
+        json={"text": _samples(20, "babe i miss you"), "relationship": "partner"},
+    )
+
+    global_patterns = client.get("/style?scope=global").json()["patterns"]
+    global_text = " ".join(p["value"] for p in global_patterns)
+    assert "miss you" not in global_text
+    assert "babe" not in global_text
+
+    # And the global prompt block — what a reply to a stranger is built from.
+    assert "miss you" not in client.get("/style").json()["prompt_block"]
+
+
+def test_a_partners_phrases_are_used_when_writing_to_the_partner(
+    client: TestClient,
+) -> None:
+    partner = _contact(client, "Ann", "partner")
+    client.post(
+        "/style/samples",
+        json={"text": _samples(20, "babe i miss you"), "relationship": "partner"},
+    )
+
+    block = client.get(f"/style?contact_id={partner['id']}").json()["prompt_block"]
+    assert "miss you" in block
+    assert "partner contacts" in block  # the layer is named, not hidden
+
+
+def test_one_relationships_phrases_do_not_appear_for_another(
+    client: TestClient,
+) -> None:
+    """The weaker half of the same rule: a friend's slang is not a boss's."""
+    _contact(client, "Bro", "friend")
+    boss = _contact(client, "Boss", "colleague")
+    client.post(
+        "/style/samples",
+        json={"text": _samples(20, "yo bro sawa"), "relationship": "friend"},
+    )
+
+    block = client.get(f"/style?contact_id={boss['id']}").json()["prompt_block"]
+    assert "bro sawa" not in block
+
+
+def test_shape_still_generalises_across_audiences(client: TestClient) -> None:
+    """Containment applies to his words, not to his rhythm.
+
+    He is a short, lowercase writer with everyone; that IS his general voice
+    and must survive, or scoping would leave ARIA with no voice at all.
+    """
+    client.post(
+        "/style/samples",
+        json={"text": _samples(20, "ok sawa"), "relationship": "partner"},
+    )
+
+    block = client.get("/style").json()["prompt_block"]
+    assert "avg_words" in block
+    assert "starts lowercase" in block
+
+
+def test_a_thin_audience_is_left_unmeasured_rather_than_guessed(
+    client: TestClient,
+) -> None:
+    """Three messages to a boss is an impression, not a measurement.
+
+    It matters because every stored scope is averaged into the confidence the
+    autonomy gate reads: a weak scope would make ARIA less sure of a voice she
+    knows well.
+    """
+    result = client.post(
+        "/style/samples",
+        json={"text": "noted\nwill do\nthanks", "relationship": "colleague"},
+    ).json()
+
+    assert result["scope"] == "relationship:colleague"
+    assert "samples are needed" in result["note"]
+    scopes = [s["scope"] for s in client.get("/style").json()["scopes"]]
+    assert "relationship:colleague" not in scopes
+
+
+def test_scopes_are_visible_with_the_layer_that_applies_marked(
+    client: TestClient,
+) -> None:
+    partner = _contact(client, "Ann", "partner")
+    client.post("/style/samples", json={"text": _samples(20, "hey there")})
+    client.post(
+        "/style/samples",
+        json={"text": _samples(20, "babe hi"), "relationship": "partner"},
+    )
+
+    scopes = client.get(f"/style?contact_id={partner['id']}").json()["scopes"]
+    applies = {s["scope"]: s["applies"] for s in scopes}
+    assert applies["global"] is True
+    assert applies["relationship:partner"] is True
+
+    _contact(client, "Boss", "colleague")
+    other = client.get("/style?contact_id=" + _contact(client, "Cli", "client")["id"])
+    assert {
+        s["scope"]: s["applies"] for s in other.json()["scopes"]
+    }["relationship:partner"] is False
+
+
+def test_a_specific_layer_overrides_the_general_one(client: TestClient) -> None:
+    friend = _contact(client, "Bro", "friend")
+    # Global evidence: he writes longer, in English, to no-one in particular.
+    client.post(
+        "/style/samples",
+        json={"text": _samples(20, "hello there i hope you are doing well today")},
+    )
+    # To friends: short and Kiswahili.
+    client.post(
+        "/style/samples",
+        json={"text": _samples(20, "sawa"), "relationship": "friend"},
+    )
+
+    block = client.get(f"/style?contact_id={friend['id']}").json()["prompt_block"]
+    # The friend measurement wins on the dimension both layers describe.
+    assert "how he writes to friend contacts" in block
+    assert block.count("avg_words") == 1
+
+
+def test_refresh_all_reports_only_the_layers_it_could_measure(
+    client: TestClient,
+) -> None:
+    _contact(client, "Ann", "partner")
+    client.post(
+        "/style/samples",
+        json={"text": _samples(20, "babe hi"), "relationship": "partner"},
+    )
+    client.post(
+        "/style/samples",
+        json={"text": "ok\nsure", "relationship": "client"},
+    )
+
+    result = client.post("/style/refresh-all").json()
+    scopes = {s["scope"] for s in result["scopes"]}
+    assert "relationship:partner" in scopes
+    assert "relationship:client" not in scopes
+
+
+def test_samples_for_an_unknown_contact_are_refused(client: TestClient) -> None:
+    assert (
+        client.post(
+            "/style/samples", json={"text": "hey", "contact_id": "nope"}
+        ).status_code
+        == 404
+    )

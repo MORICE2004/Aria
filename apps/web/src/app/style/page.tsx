@@ -1,16 +1,30 @@
 /**
  * Communication Profile — what ARIA has learned about how you write.
  *
- * Three principles made visible:
+ * Four principles made visible:
  *   • every pattern shows its evidence and confidence
  *   • nothing is learned silently — you can preview a lesson before it sticks
  *   • anything wrong can be deleted
+ *   • ARIA holds one voice per audience, and you can see which is which
  */
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { api, type StyleProfile, type VoiceReadiness } from "@/lib/api";
+
+/** Audiences you can label a paste with. Free text is allowed by the API;
+ *  these are the ones worth suggesting. */
+const RELATIONSHIPS = [
+  "friend",
+  "family",
+  "partner",
+  "colleague",
+  "boss",
+  "client",
+  "recruiter",
+  "academic",
+] as const;
 
 function confidenceColor(c: number): string {
   if (c >= 0.6) return "text-emerald-400";
@@ -34,17 +48,22 @@ export default function StylePage() {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [samples, setSamples] = useState("");
+  const [sampleAudience, setSampleAudience] = useState("");
   const [readiness, setReadiness] = useState<VoiceReadiness | null>(null);
+  const [viewScope, setViewScope] = useState<string>("");
 
   const refresh = useCallback(
     () =>
-      Promise.all([api.getStyleProfile(), api.voiceReadiness()])
+      Promise.all([
+        api.getStyleProfile(viewScope ? { scope: viewScope } : {}),
+        api.voiceReadiness(),
+      ])
         .then(([p, r]) => {
           setProfile(p);
           setReadiness(r);
         })
         .catch((e: Error) => setError(e.message)),
-    [],
+    [viewScope],
   );
 
   useEffect(() => {
@@ -57,7 +76,11 @@ export default function StylePage() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.addStyleSamples(samples);
+      const r = await api.addStyleSamples(
+        samples,
+        sampleAudience ? `pasted messages (${sampleAudience})` : "pasted messages",
+        sampleAudience || undefined,
+      );
       setSamples("");
       setNote(`Learned from ${r.added} of your messages. ${r.note}`);
       await refresh();
@@ -72,10 +95,14 @@ export default function StylePage() {
     setBusy(true);
     setError(null);
     try {
-      const r = await api.refreshStyle();
+      const r = await api.refreshAllStyleScopes();
       setNote(
-        r.sample_size > 0
-          ? `Re-measured from ${r.sample_size} message${r.sample_size === 1 ? "" : "s"} you wrote.`
+        r.scopes.length
+          ? `Re-measured ${r.scopes.length} layer${r.scopes.length === 1 ? "" : "s"}: ` +
+            r.scopes
+              .map((s) => `${s.description} (${s.samples})`)
+              .join(", ") +
+            `. Audiences with fewer than ${r.minimum_samples_per_scope} of your messages are left unmeasured rather than guessed.`
           : "No messages you wrote yet — ARIA learns your voice from your own outgoing messages.",
       );
       await refresh();
@@ -195,6 +222,36 @@ export default function StylePage() {
               placeholder={"hey bro, sawa see you at 5\njust checking if you got the file\nasante, appreciate it"}
               className="w-full rounded-lg bg-black/30 p-3 font-mono text-xs text-zinc-200 outline-none ring-1 ring-white/10 focus:ring-cyan-500/40"
             />
+
+            <div className="mt-3">
+              <label
+                htmlFor="audience"
+                className="block text-xs font-medium text-zinc-300"
+              >
+                Who was this writing for?
+              </label>
+              <p className="mb-2 mt-1 text-[11px] text-zinc-500">
+                If these messages all went to one kind of person, say so. Their
+                phrases then stay with that audience — words meant for your
+                partner will never turn up in a reply to a recruiter. Leave it
+                blank only for a mixed set that represents how you write in
+                general.
+              </p>
+              <select
+                id="audience"
+                value={sampleAudience}
+                onChange={(e) => setSampleAudience(e.target.value)}
+                className="rounded-lg bg-black/30 px-3 py-2 text-xs text-zinc-200 outline-none ring-1 ring-white/10 focus:ring-cyan-500/40"
+              >
+                <option value="">how I write in general</option>
+                {RELATIONSHIPS.map((r) => (
+                  <option key={r} value={r}>
+                    to {r} contacts
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <button
               onClick={addSamples}
               disabled={busy || !samples.trim()}
@@ -212,8 +269,49 @@ export default function StylePage() {
         className="mb-6 flex items-center gap-2 rounded-md bg-cyan-600 px-4 py-2 text-sm font-medium text-white hover:bg-cyan-500 disabled:opacity-40"
       >
         <RefreshCw size={14} aria-hidden />
-        {busy ? "Measuring…" : "Re-measure from my messages"}
+        {busy ? "Measuring…" : "Re-measure every layer"}
       </button>
+
+      {/* The layers themselves. ARIA does not have one voice — she has a
+          general one and a more specific one per audience, and which patterns
+          reach a given reply depends on who it is going to. */}
+      {profile && profile.scopes.length > 1 && (
+        <section className="glass mb-6 rounded-xl p-4">
+          <h3 className="mb-1 text-sm font-medium">Your voices</h3>
+          <p className="mb-3 text-xs text-zinc-500">
+            A reply is built from the general layer, then the layer for that
+            relationship, then the layer for that person — each overriding the
+            one before. Click a layer to see only what it holds.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setViewScope("")}
+              className={`rounded-full px-3 py-1 text-xs ring-1 ${
+                viewScope === ""
+                  ? "bg-cyan-500/20 text-cyan-200 ring-cyan-500/40"
+                  : "text-zinc-400 ring-white/10 hover:text-zinc-200"
+              }`}
+            >
+              everything
+            </button>
+            {profile.scopes.map((s) => (
+              <button
+                key={s.scope}
+                onClick={() => setViewScope(s.scope)}
+                title={`${s.pattern_count} patterns · ${s.evidence} samples · confidence ${s.confidence.toFixed(2)}`}
+                className={`rounded-full px-3 py-1 text-xs ring-1 ${
+                  viewScope === s.scope
+                    ? "bg-cyan-500/20 text-cyan-200 ring-cyan-500/40"
+                    : "text-zinc-400 ring-white/10 hover:text-zinc-200"
+                }`}
+              >
+                {s.description}
+                <span className="ml-1.5 text-zinc-500">{s.evidence}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Teach a rule directly */}
       <section className="glass mb-6 rounded-xl p-4">
@@ -313,7 +411,15 @@ export default function StylePage() {
                         {p.evidence_count} sample{p.evidence_count === 1 ? "" : "s"}
                         {" · "}
                         {p.source}
-                        {p.scope !== "global" && ` · ${p.scope}`}
+                        {p.scope !== "global" && (
+                          <>
+                            {" · "}
+                            <span className="text-cyan-400/80">
+                              {profile?.scopes.find((s) => s.scope === p.scope)
+                                ?.description ?? p.scope}
+                            </span>
+                          </>
+                        )}
                       </p>
                     </div>
                     <button

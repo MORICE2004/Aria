@@ -17,6 +17,7 @@ Two rules govern everything here:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -68,11 +69,35 @@ def samples_needed_for(target_confidence: float) -> int:
     return math.ceil(target_confidence * _CONFIDENCE_K / (1 - target_confidence))
 
 
+# Below this much evidence, a per-relationship or per-contact measurement is an
+# impression rather than a measurement, and writing it would do active harm:
+# every scope ARIA adds is averaged into the confidence the autonomy gate reads,
+# so three observed messages to his boss would drag down her certainty about a
+# voice she actually knows well. Silence is the honest answer until there is
+# enough to measure.
+MIN_SAMPLES_FOR_SCOPE = 12
+
+
 def scope_for_contact(contact: Contact | None) -> str:
     """Most specific scope available for a contact."""
     if contact is None:
         return "global"
     return f"contact:{contact.id}"
+
+
+def scope_for_relationship(relationship: str) -> str:
+    return f"relationship:{relationship}"
+
+
+def describe_scope(scope: str) -> str:
+    """Plain English for a scope, for the profile view and prompt blocks."""
+    if scope == "global":
+        return "how he writes in general"
+    if scope.startswith("relationship:"):
+        return f"how he writes to {scope.split(':', 1)[1]} contacts"
+    if scope.startswith("contact:"):
+        return "how he writes to this person"
+    return scope
 
 
 async def _upsert_pattern(
@@ -116,7 +141,11 @@ async def _upsert_pattern(
 
 
 async def collect_own_writing(
-    session: AsyncSession, contact: Contact | None = None
+    session: AsyncSession,
+    contact: Contact | None = None,
+    *,
+    relationship: str | None = None,
+    audience_only: bool = False,
 ) -> list[str]:
     """Every piece of text MORICE actually wrote, for style measurement.
 
@@ -128,48 +157,75 @@ async def collect_own_writing(
          "prefers shorter" style lessons, and were not counted as writing
          at all, which threw away the single most deliberate example of how
          he wanted a message to read.
-      3. **Writing samples he added explicitly** (`kind="style"` memories).
-         The memory system has supported these since Phase 2 and the style
-         learner ignored them entirely.
+      3. **Writing samples he added explicitly** (`kind="style"` memories),
+         restricted to those whose audience matches what is being measured.
 
     Deliberately NOT included: his chat messages to ARIA. Those are his
     words, but a different register — nobody talks to their assistant the
     way they text a friend — and blending them would make ARIA's WhatsApp
     voice sound like his ARIA voice. Inbound messages are excluded for the
     stronger reason that they are other people's voices.
+
+    Three ways to narrow it:
+
+    * `contact` — only what he wrote to that person.
+    * `relationship` — only what he wrote to people of that type.
+    * `audience_only` — for the global scope, only writing with no particular
+      audience: samples he offered as examples of how he writes in general.
+      This is what keeps a partner's phrases out of his general voice.
     """
+    from src.models import MemoryItem
+
     texts: list[str] = []
 
-    query = select(WhatsAppMessage).where(WhatsAppMessage.direction == "out")
-    if contact is not None:
-        query = query.where(WhatsAppMessage.contact_id == contact.id)
-    texts.extend(m.body for m in (await session.execute(query)).scalars())
+    if not audience_only:
+        query = select(WhatsAppMessage).where(WhatsAppMessage.direction == "out")
+        if contact is not None:
+            query = query.where(WhatsAppMessage.contact_id == contact.id)
+        elif relationship is not None:
+            query = query.join(
+                Contact, WhatsAppMessage.contact_id == Contact.id
+            ).where(Contact.relationship == relationship)
+        texts.extend(m.body for m in (await session.execute(query)).scalars())
 
-    # What he rewrote a draft into. Scoped the same way as messages.
-    corrections = select(LearningEvent).where(
-        LearningEvent.kind == "edited", LearningEvent.final != ""
-    )
-    if contact is not None:
-        corrections = corrections.where(LearningEvent.contact_id == contact.id)
-    texts.extend(e.final for e in (await session.execute(corrections)).scalars())
-
-    # Explicit writing samples. Global only: a sample he pasted is an example
-    # of how he writes in general, not how he writes to one person.
-    if contact is None:
-        from src.models import MemoryItem
-
-        samples = await session.execute(
-            select(MemoryItem).where(MemoryItem.kind == "style")
+        # What he rewrote a draft into. Scoped the same way as messages.
+        corrections = select(LearningEvent).where(
+            LearningEvent.kind == "edited", LearningEvent.final != ""
         )
-        for item in samples.scalars():
-            # A pasted block of several messages is several samples, not one
-            # long one — otherwise "average words per message" measures the
-            # size of his paste rather than the length of his messages.
-            texts.extend(
-                line.strip()
-                for line in item.content.splitlines()
-                if line.strip()
-            )
+        if contact is not None:
+            corrections = corrections.where(LearningEvent.contact_id == contact.id)
+        elif relationship is not None:
+            corrections = corrections.join(
+                Contact, LearningEvent.contact_id == Contact.id
+            ).where(Contact.relationship == relationship)
+        texts.extend(e.final for e in (await session.execute(corrections)).scalars())
+
+    # Explicit writing samples, filtered by the audience he gave them for.
+    # A chat export from one person is evidence about that person's scope; a
+    # block he pasted with no audience is evidence about his general voice.
+    sample_query = select(MemoryItem).where(MemoryItem.kind == "style")
+    if contact is not None:
+        sample_query = sample_query.where(
+            MemoryItem.style_scope == f"contact:{contact.id}"
+        )
+    elif relationship is not None:
+        sample_query = sample_query.where(
+            MemoryItem.style_scope == scope_for_relationship(relationship)
+        )
+    elif audience_only:
+        sample_query = sample_query.where(MemoryItem.style_scope == "global")
+    # Otherwise: every sample, whoever it was written to. Measuring how long
+    # his messages are, or how often he mixes Kiswahili, is better served by
+    # all of his writing than by the part of it with no named audience.
+
+    samples = await session.execute(sample_query)
+    for item in samples.scalars():
+        # A pasted block of several messages is several samples, not one
+        # long one — otherwise "average words per message" measures the
+        # size of his paste rather than the length of his messages.
+        texts.extend(
+            line.strip() for line in item.content.splitlines() if line.strip()
+        )
 
     return [t for t in texts if t and t.strip()]
 
@@ -177,7 +233,21 @@ async def collect_own_writing(
 async def refresh_from_messages(
     session: AsyncSession, contact: Contact | None = None
 ) -> dict[str, str]:
-    """Re-measure style from everything MORICE has actually written."""
+    """Re-measure style from everything MORICE has actually written.
+
+    For a contact this measures only what he wrote to that person. For the
+    global scope it measures two pools rather than one, which is the whole
+    point of the split:
+
+    * **Shape** — length, rhythm, punctuation, language mix — from everything
+      he has written. These generalise: he is a short, lowercase writer whether
+      he is texting a friend or a recruiter.
+    * **Words** — greetings, sign-offs, recurring phrases — only from writing
+      with no particular audience. A phrase he uses with his partner is
+      genuinely his and still has no business appearing in a reply to a
+      client, so it never becomes part of his general voice. It is learned
+      instead at the scope it belongs to, and used there.
+    """
     texts = await collect_own_writing(session, contact)
 
     metrics = style.analyze(texts)
@@ -186,17 +256,124 @@ async def refresh_from_messages(
 
     scope = scope_for_contact(contact)
     dimensions = metrics.as_dimensions()
+
+    # Lexical evidence is the audience-free pool for the global scope, and the
+    # contact's own messages for a contact scope.
+    lexical_evidence = metrics.sample_size
+
+    if contact is None:
+        general = style.analyze(
+            await collect_own_writing(session, audience_only=True)
+        )
+        lexical_evidence = general.sample_size
+        general_dimensions = general.as_dimensions()
+        for dimension in list(dimensions):
+            if not style.is_lexical(dimension):
+                continue
+            # Keep the audience-free reading of this dimension, or drop the
+            # dimension entirely when there is no audience-free evidence for
+            # it. Dropping means deleting: a phrase learned before scoping
+            # existed must not survive as a global rule.
+            if dimension in general_dimensions:
+                dimensions[dimension] = general_dimensions[dimension]
+            else:
+                del dimensions[dimension]
+                await _delete_pattern(session, dimension=dimension, scope=scope)
+
     for dimension, value in dimensions.items():
+        # Lexical dimensions carry their own evidence count: it is the size of
+        # the pool they were actually measured from, not of everything he has
+        # ever written. Overstating it would overstate ARIA's confidence.
+        evidence = (
+            lexical_evidence if style.is_lexical(dimension) else metrics.sample_size
+        )
         await _upsert_pattern(
             session,
             dimension=dimension,
             scope=scope,
             value=value,
-            evidence_count=metrics.sample_size,
+            evidence_count=evidence,
             source="observed",
         )
     await session.commit()
     return dimensions
+
+
+async def _delete_pattern(
+    session: AsyncSession, *, dimension: str, scope: str
+) -> None:
+    existing = (
+        await session.execute(
+            select(StylePattern).where(
+                StylePattern.dimension == dimension, StylePattern.scope == scope
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        await session.delete(existing)
+
+
+async def refresh_all_scopes(session: AsyncSession) -> dict[str, int]:
+    """Re-measure every scope ARIA has enough evidence to measure.
+
+    Returns scope -> sample size for the scopes that were written, so the
+    caller can report what was actually learned rather than claiming a
+    profile exists for everyone.
+
+    Scopes with less than `MIN_SAMPLES_FOR_SCOPE` behind them are skipped, not
+    written weakly. See the constant for why that matters more than it looks.
+    """
+    written: dict[str, int] = {}
+
+    dimensions = await refresh_from_messages(session)
+    if dimensions:
+        patterns = await list_patterns(session, "global")
+        written["global"] = max((p.evidence_count for p in patterns), default=0)
+
+    relationships = (
+        await session.execute(
+            select(Contact.relationship)
+            .where(Contact.relationship != "", Contact.relationship != "unknown")
+            .distinct()
+        )
+    ).scalars()
+
+    for relationship in list(relationships):
+        texts = await collect_own_writing(session, relationship=relationship)
+        if len(texts) < MIN_SAMPLES_FOR_SCOPE:
+            continue
+        metrics = style.analyze(texts)
+        scope = scope_for_relationship(relationship)
+        for dimension, value in metrics.as_dimensions().items():
+            await _upsert_pattern(
+                session,
+                dimension=dimension,
+                scope=scope,
+                value=value,
+                evidence_count=metrics.sample_size,
+                source="observed",
+            )
+        written[scope] = metrics.sample_size
+
+    contacts = (await session.execute(select(Contact))).scalars()
+    for contact in list(contacts):
+        texts = await collect_own_writing(session, contact)
+        if len(texts) < MIN_SAMPLES_FOR_SCOPE:
+            continue
+        metrics = style.analyze(texts)
+        for dimension, value in metrics.as_dimensions().items():
+            await _upsert_pattern(
+                session,
+                dimension=dimension,
+                scope=f"contact:{contact.id}",
+                value=value,
+                evidence_count=metrics.sample_size,
+                source="observed",
+            )
+        written[f"contact:{contact.id}"] = metrics.sample_size
+
+    await session.commit()
+    return written
 
 
 async def record_feedback(
@@ -288,6 +465,57 @@ async def list_patterns(
     return list((await session.execute(query)).scalars())
 
 
+@dataclass(frozen=True)
+class ScopeSummary:
+    """One layer of the profile, described for MORICE rather than for code."""
+
+    scope: str
+    description: str
+    pattern_count: int
+    evidence: int
+    confidence: float
+
+
+async def summarise_scopes(session: AsyncSession) -> list[ScopeSummary]:
+    """Every layer ARIA has actually learned, general first.
+
+    Exists so the profile view can show that ARIA holds several voices rather
+    than one — and which of them she would use for a given person.
+    """
+    patterns = await list_patterns(session)
+    by_scope: dict[str, list[StylePattern]] = {}
+    for pattern in patterns:
+        by_scope.setdefault(pattern.scope, []).append(pattern)
+
+    summaries: list[ScopeSummary] = []
+    for scope, group in by_scope.items():
+        usable = [p.confidence for p in group if p.confidence >= _USABLE_CONFIDENCE]
+        summaries.append(
+            ScopeSummary(
+                scope=scope,
+                description=describe_scope(scope),
+                pattern_count=len(group),
+                evidence=max((p.evidence_count for p in group), default=0),
+                confidence=(
+                    round(sum(usable) / len(usable), 3) if usable else 0.0
+                ),
+            )
+        )
+
+    # Global first, then relationships, then people: the order they compose in.
+    def rank(summary: ScopeSummary) -> tuple[int, str]:
+        prefix = (
+            0
+            if summary.scope == "global"
+            else 1
+            if summary.scope.startswith("relationship:")
+            else 2
+        )
+        return prefix, summary.scope
+
+    return sorted(summaries, key=rank)
+
+
 async def forget_pattern(session: AsyncSession, pattern_id: str) -> bool:
     """Delete a learned pattern. MORICE must be able to correct ARIA."""
     pattern = await session.get(StylePattern, pattern_id)
@@ -298,53 +526,95 @@ async def forget_pattern(session: AsyncSession, pattern_id: str) -> bool:
     return True
 
 
+def scopes_for(contact: Contact | None) -> list[str]:
+    """The layers that compose a reply's voice, least specific first.
+
+    This is the product directive's formula in code:
+
+        GENERAL PROFILE + RELATIONSHIP PROFILE + CONTACT PROFILE
+
+    The remaining two terms — current conversation and current intent — are
+    per-message rather than learned, so they are passed into the block below
+    instead of being stored as patterns.
+    """
+    scopes = ["global"]
+    if contact is not None:
+        if contact.relationship and contact.relationship != "unknown":
+            scopes.append(scope_for_relationship(contact.relationship))
+        scopes.append(f"contact:{contact.id}")
+    return scopes
+
+
 async def build_profile_block(
-    session: AsyncSession, contact: Contact | None = None
+    session: AsyncSession,
+    contact: Contact | None = None,
+    *,
+    intent: str = "",
 ) -> str:
     """Assemble the style guidance injected into drafting prompts.
 
     Specific scopes override global ones on the same dimension, because how
     he writes to one person beats how he writes in general. Weak patterns are
     omitted entirely rather than presented as fact.
+
+    Every line says which layer it came from. That is not decoration: when
+    ARIA writes something that sounds wrong to MORICE, the first question is
+    where she got it, and a profile that cannot answer that cannot be
+    corrected.
     """
-    scopes = ["global"]
-    if contact is not None:
-        if contact.relationship and contact.relationship != "unknown":
-            scopes.append(f"relationship:{contact.relationship}")
-        scopes.append(f"contact:{contact.id}")
+    scopes = scopes_for(contact)
 
     # Later scopes win; rules accumulate rather than overwrite.
-    chosen: dict[str, StylePattern] = {}
+    chosen: dict[str, tuple[StylePattern, str]] = {}
     rules: list[StylePattern] = []
+    corrections: list[StylePattern] = []
     for scope in scopes:
         for pattern in await list_patterns(session, scope):
             if pattern.confidence < _USABLE_CONFIDENCE:
                 continue
             if pattern.dimension.startswith("rule:"):
                 rules.append(pattern)
+            elif pattern.dimension.startswith("edit:"):
+                # A correction is guidance, not a measurement; it reads as an
+                # instruction rather than as a statistic.
+                corrections.append(pattern)
             else:
-                chosen[pattern.dimension] = pattern
+                chosen[pattern.dimension] = (pattern, scope)
 
-    if not chosen and not rules:
+    if not chosen and not rules and not corrections:
         return (
             "No style profile yet — ARIA has not observed enough of MORICE's "
             "writing. Write naturally and neutrally; do not invent a voice."
         )
 
     lines = ["MORICE'S WRITING STYLE (learned from his real messages):"]
-    for pattern in sorted(chosen.values(), key=lambda p: -p.confidence):
+    for pattern, scope in sorted(chosen.values(), key=lambda pair: -pair[0].confidence):
         lines.append(
             f"- {pattern.dimension}: {pattern.value} "
-            f"[confidence {pattern.confidence:.2f}, {pattern.evidence_count} samples]"
+            f"[{describe_scope(scope)}; confidence {pattern.confidence:.2f}, "
+            f"{pattern.evidence_count} samples]"
         )
     if rules:
         lines.append("")
         lines.append("EXPLICIT RULES FROM MORICE (always obey these):")
         lines.extend(f"- {r.value}" for r in rules)
+    if corrections:
+        lines.append("")
+        lines.append("WHAT HE CHANGED WHEN HE CORRECTED ARIA:")
+        lines.extend(f"- {c.value}" for c in corrections)
+
+    if intent:
+        lines.append("")
+        lines.append(
+            f"What this particular message needs to do: {intent}. Stay in his "
+            "voice while doing it — the purpose changes the content, not the "
+            "way he writes."
+        )
 
     lines.append("")
     lines.append(
         "Imitate these patterns. Where confidence is low, stay neutral rather "
-        "than exaggerating the trait."
+        "than exaggerating the trait. Do not reuse a phrase listed for a "
+        "different audience than this one."
     )
     return "\n".join(lines)

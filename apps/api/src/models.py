@@ -111,6 +111,12 @@ class MemoryItem(Base):
     # Where it came from, in MORICE's terms: "you told me", "from your CV",
     # "extracted from a WhatsApp message on 2026-08-16".
     provenance: Mapped[str] = mapped_column(String(300), default="")
+    # Style samples only: which audience this writing represents. A chat export
+    # from his partner is evidence of how he writes TO HER, not of how he
+    # writes in general, and phrases from it must never reach the global voice.
+    # "global" | "relationship:<type>" | "contact:<id>". Empty for non-style
+    # memories, which have no audience.
+    style_scope: Mapped[str] = mapped_column(String(60), default="", index=True)
     # Transient memories expire; everything else has no expiry.
     expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

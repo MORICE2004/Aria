@@ -66,6 +66,7 @@ async def draft_reply(
     conversation: str,
     instructions: str,
     contact=None,
+    intent: str = "",
 ) -> str:
     """Draft a reply in MORICE's style. Returns text only — never sends.
 
@@ -75,13 +76,17 @@ async def draft_reply(
     """
     from src.communication import learning
 
-    style_block = await learning.build_profile_block(session, contact)
+    style_block = await learning.build_profile_block(session, contact, intent=intent)
 
-    # Hand-curated style memories remain useful as concrete examples.
+    # Hand-curated style memories remain useful as concrete examples — but only
+    # those written for this audience. A search for "writing style" happily
+    # returns the export of his most intimate conversation, and pasting it in
+    # whole defeats the scoping the profile above is careful about.
+    allowed_scopes = set(learning.scopes_for(contact))
     style_hits = [
         h
         for h in await memory.search(session, f"writing style {platform} messages", k=6)
-        if h.kind == "style"
+        if h.kind == "style" and (h.style_scope or "global") in allowed_scopes
     ][:2]
     if style_hits:
         style_block += "\n\nExamples he wrote himself:\n" + "\n---\n".join(

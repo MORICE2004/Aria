@@ -338,6 +338,7 @@ async def _prepare_draft(
             conversation=transcript or f"{contact.name}: {incoming}",
             instructions="reply naturally as MORICE would",
             contact=contact,
+            intent=classification.intent if classification else "",
         )
     except Exception as exc:  # noqa: BLE001 — a failed draft must not lose the message
         logger.warning("Draft generation failed for %s: %s", contact.handle, exc)

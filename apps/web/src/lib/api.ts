@@ -156,7 +156,20 @@ export type StylePattern = {
   evidence_count: number;
   source: string;
 };
-export type StyleProfile = { patterns: StylePattern[]; prompt_block: string };
+/** One layer of ARIA's voice: general, per relationship type, or per person. */
+export type StyleScope = {
+  scope: string;
+  description: string;
+  pattern_count: number;
+  evidence: number;
+  confidence: number;
+  applies: boolean;
+};
+export type StyleProfile = {
+  patterns: StylePattern[];
+  prompt_block: string;
+  scopes: StyleScope[];
+};
 
 export type WaDraft = {
   id: string;
@@ -293,16 +306,26 @@ export type VoiceReadiness = {
 
 export const api = {
   voiceReadiness: () => request<VoiceReadiness>("/style/readiness"),
-  addStyleSamples: (text: string, label = "pasted messages") =>
+  addStyleSamples: (
+    text: string,
+    label = "pasted messages",
+    relationship?: string,
+  ) =>
     request<{
       added: number;
       total_samples: number;
       confidence: number;
       ready_for_autonomy: boolean;
       note: string;
+      scope: string;
+      scope_description: string;
     }>("/style/samples", {
       method: "POST",
-      body: JSON.stringify({ text, label }),
+      body: JSON.stringify({
+        text,
+        label,
+        relationship: relationship || null,
+      }),
     }),
 
   listInsights: () => request<Insight[]>("/proactive"),
@@ -320,7 +343,18 @@ export const api = {
       { method: "POST", body: JSON.stringify({ decision, final }) },
     ),
 
-  getStyleProfile: () => request<StyleProfile>("/style"),
+  getStyleProfile: (opts: { contactId?: string; scope?: string } = {}) => {
+    const query = new URLSearchParams();
+    if (opts.contactId) query.set("contact_id", opts.contactId);
+    if (opts.scope) query.set("scope", opts.scope);
+    const suffix = query.toString();
+    return request<StyleProfile>(`/style${suffix ? `?${suffix}` : ""}`);
+  },
+  refreshAllStyleScopes: () =>
+    request<{
+      scopes: { scope: string; description: string; samples: number }[];
+      minimum_samples_per_scope: number;
+    }>("/style/refresh-all", { method: "POST" }),
   refreshStyle: () =>
     request<{ dimensions: Record<string, string>; sample_size: number }>(
       "/style/refresh",

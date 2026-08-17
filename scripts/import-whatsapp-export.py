@@ -16,6 +16,15 @@ Usage, from the repo root:
 
     # See what would be imported, without changing anything:
     ... --dry-run
+
+An export is ONE conversation with ONE person, so say who they are to you:
+
+    ... --relationship partner "C:/path/WhatsApp Chat with Ann.zip"
+
+That keeps the phrases from that chat at that audience. Without it the chat
+teaches ARIA's general voice, and words meant for one person can surface in a
+reply to anyone. Import his general voice from a mixed set of chats, and each
+close relationship separately.
 """
 
 from __future__ import annotations
@@ -106,6 +115,13 @@ def main() -> int:
     parser.add_argument("--password", default="", help="ARIA password if auth is on")
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT_PER_CHAT)
     parser.add_argument(
+        "--relationship",
+        default="",
+        help="Who these chats are to you (partner, friend, colleague, boss, "
+        "client, family, recruiter...). Keeps their phrases at that audience "
+        "instead of teaching ARIA's general voice.",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="report only, import nothing"
     )
     args = parser.parse_args()
@@ -157,13 +173,13 @@ def main() -> int:
 
     result = None
     for label, msgs in collected.items():
+        payload = {"text": "\n".join(msgs), "label": f"WhatsApp export: {label}"}
+        if args.relationship:
+            payload["relationship"] = args.relationship
         try:
-            result = post(
-                f"{args.api}/style/samples",
-                {"text": "\n".join(msgs), "label": f"WhatsApp export: {label}"},
-                token,
-            )
+            result = post(f"{args.api}/style/samples", payload, token)
             print(f"  imported {result['added']} from {label}")
+            print(f"    -> {result['scope_description']}")
         except urllib.error.HTTPError as exc:
             print(f"  !! {label}: HTTP {exc.code} {exc.read()[:200]!r}")
             return 1

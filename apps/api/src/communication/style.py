@@ -46,6 +46,26 @@ _SIGNOFF_WORDS = {
 }
 
 
+# Dimensions whose value is the WORDS MORICE used, as opposed to the shape of
+# his writing. The distinction decides what may become part of his general
+# voice: rhythm, length and language mix are his everywhere, but the phrases he
+# uses belong to the person he was talking to. "bro sawa" and "i miss you" are
+# both genuinely his, and neither should turn up in a reply to a recruiter.
+#
+# Read alongside learning.build_profile_block, which is where the rule bites.
+LEXICAL_DIMENSIONS = frozenset({"greeting", "signoff", "common_phrases"})
+
+
+def is_lexical(dimension: str) -> bool:
+    """Does this dimension carry MORICE's actual words rather than his shape?
+
+    Explicit rules are deliberately NOT lexical: he chose their scope himself
+    when he stated them, and an instruction he gave outweighs a precaution
+    against a pattern ARIA inferred.
+    """
+    return dimension in LEXICAL_DIMENSIONS
+
+
 @dataclass
 class StyleMetrics:
     """Measured writing characteristics, with the evidence behind them."""
