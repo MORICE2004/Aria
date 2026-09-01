@@ -126,18 +126,27 @@ export default function ChatPage() {
                 She answers some things herself, from what she has recorded:
               </p>
               <div className="mx-auto mt-2 flex max-w-sm flex-wrap justify-center gap-1.5">
+                {/* `insert` differs from `label` for the commands that carry a
+                    subject: the button fills the box with a prefix he then
+                    completes, so the ellipsis never ends up in the message. */}
                 {[
-                  "briefing",
-                  "what did I miss?",
-                  "why did you send that?",
-                  "stop",
-                ].map((suggestion) => (
+                  { label: "briefing" },
+                  { label: "what did I miss?" },
+                  { label: "why did you send that?" },
+                  { label: "remember that…", insert: "remember that " },
+                  {
+                    label: "what do you remember about…",
+                    insert: "what do you remember about ",
+                  },
+                  { label: "research…", insert: "research " },
+                  { label: "stop" },
+                ].map(({ label, insert }) => (
                   <button
-                    key={suggestion}
-                    onClick={() => setInput(suggestion)}
+                    key={label}
+                    onClick={() => setInput(insert ?? label)}
                     className="rounded-full px-2.5 py-1 text-xs text-zinc-500 ring-1 ring-white/10 hover:text-cyan-300 hover:ring-cyan-500/30"
                   >
-                    {suggestion}
+                    {label}
                   </button>
                 ))}
               </div>

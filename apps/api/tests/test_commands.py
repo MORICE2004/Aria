@@ -179,3 +179,188 @@ def test_a_command_costs_nothing(client: TestClient) -> None:
     """Answered from records, so no model call and no spend."""
     _say(client, "briefing")
     assert client.get("/costs").json()["totals"]["today"]["calls"] == 0
+
+
+# ---------- remembering ----------
+
+def test_remember_stores_what_he_said(client: TestClient) -> None:
+    reply = _say(client, "ARIA, remember that my passport expires in March 2027")
+
+    assert "Remembered" in reply
+    stored = client.get("/memory").json()
+    assert any("passport expires in March 2027" in m["content"] for m in stored)
+
+
+def test_remember_carries_a_long_note_intact(client: TestClient) -> None:
+    """The 200-character rule protects the kill switch, not the notepad.
+
+    A remember command whose content is a few paragraphs is the ordinary case;
+    if the length guard applied to it, the content would be silently dropped
+    and answered conversationally instead.
+    """
+    body = (
+        "the landlord agreement says rent is due on the 5th, the deposit is "
+        "two months, repairs under 50000 are mine, and the notice period is "
+        "sixty days which is longer than the usual thirty so I need to diary "
+        "it well before the lease ends in November"
+    )
+    assert len(body) > 200
+
+    _say(client, f"remember this: {body}")
+
+    stored = client.get("/memory").json()
+    assert any(m["content"] == body for m in stored)
+
+
+def test_a_remembered_note_says_why_it_is_remembered(client: TestClient) -> None:
+    """Provenance is what makes a memory trustworthy; it must be set."""
+    _say(client, "remember that I prefer morning meetings")
+
+    note = next(
+        m for m in client.get("/memory").json() if "morning meetings" in m["content"]
+    )
+    assert note["provenance"] == "You told me to remember this in chat"
+
+
+def test_a_word_beginning_with_the_command_is_not_the_command(
+    client: TestClient,
+) -> None:
+    """`remember` must not match the first eight letters of `remembering`."""
+    _say(client, "remembering names is genuinely hard for me")
+    assert client.get("/memory").json() == []
+
+
+def test_a_question_about_a_memory_does_not_store_the_question(
+    client: TestClient,
+) -> None:
+    """"Remember what I told you about X?" is a question, not an instruction."""
+    _say(client, "remember what I told you about the visa appointment?")
+    assert client.get("/memory").json() == []
+
+
+# ---------- recalling ----------
+
+def test_recall_answers_from_memory(client: TestClient) -> None:
+    _say(client, "remember that my landlord is called Hamisi")
+    reply = _say(client, "what do you remember about my landlord?")
+
+    assert "Hamisi" in reply
+    assert "match" in reply  # each hit is reported with its score
+
+
+def test_recall_admits_an_empty_memory(client: TestClient) -> None:
+    reply = _say(client, "what do you remember about my car insurance?")
+    assert "Nothing on" in reply
+    assert "remember that" in reply  # tells him how to fix it
+
+
+def test_recall_costs_nothing(client: TestClient) -> None:
+    """Answered from stored records, so nothing can be embellished by a model."""
+    _say(client, "remember that the office wifi password is on the router")
+    _say(client, "what do you remember about the wifi?")
+
+    assert client.get("/costs").json()["totals"]["today"]["calls"] == 0
+
+
+# ---------- forgetting ----------
+
+def test_forget_that_undoes_what_was_just_remembered(client: TestClient) -> None:
+    _say(client, "remember that I owe Ann 20000")
+    assert len(client.get("/memory").json()) == 1
+
+    reply = _say(client, "forget that")
+
+    assert "Forgotten" in reply
+    assert client.get("/memory").json() == []
+
+
+def test_forget_it_is_an_ordinary_phrase_when_nothing_was_remembered(
+    client: TestClient,
+) -> None:
+    """The false positive that would matter: deleting on a change of subject.
+
+    With nothing recently stored from chat, "forget it" must reach the model
+    like any other sentence.
+    """
+    reply = _say(client, "forget it")
+    assert "Echo:" in reply
+    assert "Forgotten" not in reply
+
+
+def test_forget_that_will_not_touch_a_memory_aria_learned_elsewhere(
+    client: TestClient,
+) -> None:
+    """Only work this command layer created may be undone by a typed word."""
+    client.post(
+        "/memory",
+        json={
+            "title": "From his CV",
+            "content": "Five years of logistics experience",
+            "kind": "document",
+        },
+    )
+
+    reply = _say(client, "forget that")
+
+    assert "Echo:" in reply  # fell through; nothing was deleted
+    assert len(client.get("/memory").json()) == 1
+
+
+def test_forgetting_by_subject_lists_but_never_deletes(client: TestClient) -> None:
+    """Semantic matching is approximate, so deletion stays a deliberate click."""
+    _say(client, "remember that my landlord is called Hamisi")
+
+    reply = _say(client, "forget everything about my landlord")
+
+    assert "will not delete" in reply
+    assert "Hamisi" in reply  # shows exactly what it would have taken
+    assert len(client.get("/memory").json()) == 1
+
+
+def test_forgetting_a_subject_it_has_nothing_on_says_so(client: TestClient) -> None:
+    reply = _say(client, "forget everything about the boat purchase")
+    assert "nothing matching" in reply
+
+
+# ---------- research ----------
+
+def test_research_reaches_the_research_agent(client: TestClient) -> None:
+    """Not the chat model. The tell is the scope note, which only it writes."""
+    _say(client, "remember that the deposit on the flat was 240000 shillings")
+
+    reply = _say(client, "research what the flat has cost me so far")
+
+    assert "no web access" in reply
+    # Numbered to match the [n] markers the agent writes into the answer.
+    assert "Sources, numbered as the answer cites them:" in reply
+    assert "[1] your memory:" in reply
+
+
+def test_research_with_no_evidence_does_not_improvise(client: TestClient) -> None:
+    reply = _say(client, "research the history of the Zanzibar clove trade")
+
+    assert "nothing on this" in reply
+    assert "cannot search the web" in reply
+
+
+def test_research_says_it_stored_nothing(client: TestClient) -> None:
+    """It costs a model call; it must not also quietly grow his memory."""
+    reply = _say(client, "research my rent history")
+    assert "Nothing was stored" in reply
+    assert client.get("/memory").json() == []
+
+
+def test_an_ordinary_sentence_is_not_a_research_request(client: TestClient) -> None:
+    reply = _say(client, "I should probably research that at some point")
+    assert "Echo:" in reply
+
+
+def test_an_unfinished_command_reaches_the_model(client: TestClient) -> None:
+    """The chat page's buttons prefill "remember that " for him to complete.
+
+    Sending it unfinished, or with the placeholder ellipsis still in it, must
+    not store a memory whose content is punctuation.
+    """
+    for unfinished in ("remember that ...", "research ...", "remember that"):
+        _say(client, unfinished)
+    assert client.get("/memory").json() == []

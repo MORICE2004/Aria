@@ -105,15 +105,23 @@ async def send_message(
     """Save the user message, then stream the assistant's reply as plain text.
 
     Some messages ARIA answers herself. "ARIA, briefing", "why did you send
-    that?", "stop" reach the capability that owns them instead of a chat model
+    that?", "stop", "remember this: ...", "what do you remember about X",
+    "research X" reach the capability that owns them instead of a chat model
     that cannot see any of it — see `src/commands.py` for why the matching is
     deterministic rather than model-judged.
+
+    The memory service and the model router are handed to the command layer
+    because some of those capabilities need them. They are the same instances
+    this endpoint would have used, so a command and a conversation are looking
+    at exactly the same memory.
     """
     conversation = await _get_conversation_or_404(session, conversation_id)
 
     # Checked before the retrieval below, which would otherwise embed and search
     # for a message that is never going to a model.
-    handled = await commands.handle(session, body.content)
+    handled = await commands.handle(
+        session, body.content, memory=memory, model_router=model_router
+    )
     if handled is not None:
         logger.info("Handled %r as the %s command", body.content[:60], handled.command)
         _record_user_message(session, conversation, body.content)
