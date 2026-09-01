@@ -65,10 +65,27 @@ npm run dev
 
 ## Running tests
 
+Backend — 413 tests against in-memory SQLite, so no database is needed:
+
 ```powershell
 cd apps/api
 .venv\Scripts\activate
 pytest
+```
+
+Frontend — 25 tests, vitest and jsdom:
+
+```powershell
+cd apps/web
+npm test
+```
+
+The WhatsApp bridge has its own suite, and its own containment check that
+fails if the read-only observer ever grows a way to send:
+
+```powershell
+cd apps/wa-bridge
+npm test
 ```
 
 ## Documentation

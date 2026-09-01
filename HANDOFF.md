@@ -1,6 +1,134 @@
 # ARIA — Handoff
 
-Updated 2026-08-17. Keep this current after every significant phase.
+Updated 2026-09-01. Keep this current after every significant phase.
+
+---
+
+# SESSION 2026-09-01 - read this part first
+
+**413 backend tests + 25 frontend tests + 10 bridge tests passing. Frontend
+lint + build clean (19 routes). Bridge containment check green.**
+
+The frontend had no tests at all until today. It has 25 now, and the first
+thing they found was a live bug.
+
+## The one thing only MORICE can do (unchanged, and now one command)
+
+Both WhatsApp devices need a QR scan from the phone. Nothing else is waiting.
+
+```powershell
+.\start-whatsapp-bridge.ps1
+```
+
+That is now the whole pairing flow for the **observer**: it verifies read-only,
+starts the bridge, watches for a code, and opens a browser page with a
+scannable QR if one appears. It used to take two terminals started in the right
+order, which is a large part of why it kept not happening. Verified today: the
+observer requests a code, writes it, and the renderer turns it into a 35 KB
+scannable page.
+
+Then **WhatsApp -> Settings -> Linked Devices -> Link a Device**, demo number.
+
+The **sender** is separate and deliberately not automatic:
+`node apps/wa-bridge/sender.js`.
+
+### Why the observer needs re-pairing at all
+
+WhatsApp ended its linked-device session on 2026-08-17. `apps/wa-bridge/auth`
+was left empty and has been moved aside to `auth.logged-out-2026-08-17/`. ARIA
+has observed no real messages since. Nothing is broken; the device is logged
+out.
+
+## What changed today
+
+| Area | What |
+|---|---|
+| Chat commands | Four more: remember, recall, research, forget - each reaching the capability that owns it |
+| Auth | **Bug:** chat was the one API call that never sent the login token. With a password set, every message 401'd |
+| Activity page | **Bug:** it reported queued messages as sent, and labelled them "ARIA replied" |
+| Frontend testing | vitest + jsdom + Testing Library, 25 tests, from zero |
+| Pairing | One command instead of two terminals |
+| Docs | The WhatsApp status table said "paired to the demo number" two weeks after it stopped being true |
+
+### The two live bugs, and why neither was visible
+
+**Chat sent no auth token.** `api.sendMessage` cannot go through `request()` —
+it needs the raw body to stream — so it repeats what `request()` does, and it
+repeated only the Content-Type. Confirmed against the live API: POST to a
+conversation's messages endpoint returns 401 with no token and with a bad one.
+So chat from the browser has been broken for as long as `ARIA_PASSWORD` has
+been set, and it presented as "API error 401" rather than a redirect to the
+login page. The regression test was checked against the bug before the fix
+landed: it fails with the old header, passes with the new one.
+
+**The activity page called queued messages sent.** The section built to make
+autonomy verifiable was headed "Every message ARIA sent on her own" and
+labelled each entry "ARIA replied:", with the real status in small grey text.
+Until the sender is linked every autonomous reply is queued, so that page was
+claiming messages had reached people who never received them. Delivered and
+Queued are now separate counters; each entry says "ARIA replied" only when the
+message actually went, and "ARIA wrote, and it is still waiting to go out"
+otherwise. Five tests pin the wording, because the wording is the feature.
+
+### The new chat commands (extends §44)
+
+`remember this: X` / `what do you remember about X` / `research X` /
+`forget that`. Two families now share `src/commands.py`: the control commands
+are short and argument-free, and a 200-character rule keeps a sentence about
+stopping procrastination out of the kill switch. That rule would have silently
+discarded the content of "remember this: <three paragraphs>", so
+subject-carrying commands are matched first and are not length-limited. The
+looser rule is defensible because the failure differs in kind: a mistaken
+"remember" writes a row he can see and delete; a mistaken "stop" disarms ARIA.
+
+Forgetting destroys data, so it is the most conservative thing in the module.
+`forget that` only undoes memories the command layer itself created, only
+within fifteen minutes, and otherwise falls through to the model — "forget it"
+is an ordinary English phrase and must not delete anything when he is changing
+the subject. `forget everything about X` lists what it matches and deletes none
+of it, because semantic search is approximate and a typed phrase taking the
+wrong memory is a silent loss.
+
+Research is the only command that costs a model call. It earns it: the
+alternative is a chat model answering a research question from training data
+while sounding like it looked something up. Sources are numbered and **not**
+de-duplicated, because the answer cites evidence by position — collapsing
+repeats would point every citation at the wrong source.
+
+Verified live against Postgres with the real embedder and Gemini: stored,
+recalled at 76% match, refused to bulk-forget, researched with a resolvable
+citation, undone, and left nothing behind.
+
+### Frontend tests: what they cover, and why those things
+
+Chosen for invisibility of failure, not for coverage percentage.
+
+- **The API client.** Every page depends on it and its bugs look like nothing
+  in review. Token on every call including chat and upload, 401 to the login
+  page, the API's own explanation surviving instead of a bare status code, 204
+  not parsed as JSON, and the multipart upload leaving Content-Type alone so
+  the boundary is right.
+- **Components carrying a safety promise.** The security banner warns when
+  ARIA has no password and stays quiet when the API is merely unreachable —
+  claiming she is unprotected because a check failed would teach him to ignore
+  it. Draft review offers no Send button, because ARIA cannot send.
+- **The activity page's honesty about delivery**, above.
+
+Run them with `npm test` in `apps/web`.
+
+## What remains
+
+1. **Pair both devices** (above). Still the only thing blocking real autonomy,
+   and still the only thing that needs his hands.
+2. **Relationship evidence.** The machinery is done; only his general voice has
+   enough data behind it. Importing two or three chats with `--relationship`
+   populates the rest.
+3. **No web search, no OCR, no calendar OAuth.** Each is blocked on something
+   external — an API key, a Tesseract install, Google credentials — not on
+   design. The research agent's `SourceProvider` interface is shaped for web
+   search: one adapter and one key, not a rewrite.
+4. **Frontend tests cover three areas, not the app.** The pages with the most
+   untested logic are `/whatsapp` and `/style`.
 
 ---
 

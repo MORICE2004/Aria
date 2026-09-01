@@ -222,7 +222,12 @@ def main() -> int:
                 starter = "index.js" if role == "observer" else "sender.js"
                 print(f"  no code yet; start `node {starter}` in another terminal")
 
-        if not opened and not args.no_open:
+        # Only open a window once there is something to scan. This script is
+        # started automatically alongside the bridge now, and a device that is
+        # already linked never produces a code — popping up a browser tab on
+        # every restart to show "nothing to scan" would train him to close it
+        # without looking, which is the one habit that breaks pairing.
+        if not opened and not args.no_open and payload is not None:
             webbrowser.open(page.as_uri())
             opened = True
 

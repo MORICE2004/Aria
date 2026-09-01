@@ -1,16 +1,27 @@
 # ARIA — WhatsApp
 
-Status as of **2026-08-17**:
+Status as of **2026-09-01**:
 
 | Capability | State |
 |---|---|
-| Receiving real messages | **live** — Baileys observer, paired to the demo number |
+| **Receiving real messages** | **stopped — the observer device is logged out** |
 | Durable ingestion (no message loss) | **live and proven against a killed API** |
 | Classification, risk, autonomy decisions | **live** |
 | Drafting in his learned voice | **live** |
 | Approving a send (autonomous or by hand) | **live** |
 | Queueing an approved message for delivery | **live** |
-| **Physically delivering it to WhatsApp** | **blocked on one QR scan** — see below |
+| **Physically delivering it to WhatsApp** | **blocked — the sender was never linked** |
+
+Both blocked rows are the same missing act: a QR scan on the phone. Nothing in
+the software is waiting on anything else, and both are recoverable in about a
+minute each — see *Pairing* below.
+
+The observer's credentials were wiped on **2026-08-17** (WhatsApp ended the
+linked-device session; `apps/wa-bridge/auth` was left empty and has been moved
+aside to `auth.logged-out-2026-08-17/`). ARIA has therefore observed no real
+messages since then. The pipeline behind it was re-verified on 2026-09-01 and
+is intact: the observer starts, requests a code, and writes it for the
+renderer.
 
 ## The two processes
 
@@ -73,23 +84,50 @@ queue: both claimed with handle and body intact, both returned `pending` with
 `attempts` back at 0, `send_released` recorded on each send's own gateway
 trail.
 
-### What MORICE has to do — the only remaining step
+### Pairing — the only remaining step, and the only thing ARIA cannot do herself
+
+Two devices pair separately: the observer (receives) and the sender
+(delivers). Each has its own auth directory and its own QR. Linking one does
+nothing for the other.
+
+**The observer — start here.** Until this is linked, ARIA sees nothing.
+
+```powershell
+.\start-whatsapp-bridge.ps1
+```
+
+That is the whole command. It verifies the read-only guarantee, starts the
+observer, and watches for a pairing code; if one appears it opens a browser
+page showing the QR at a size a phone will actually scan. (The terminal QR on
+Windows frequently will not: the console font squashes the modules just enough
+that the camera refuses it, which looks exactly like a broken pairing flow. The
+page is the fix, and it is now automatic rather than a second command in a
+second terminal.)
+
+On the phone: **WhatsApp → Settings → Linked Devices → Link a Device**. Scan
+the page. Use the **demo number**, not his primary. The code rotates about
+every 20 seconds and the page re-renders itself, so a stale one is not a
+problem — scan whatever is on screen.
+
+**The sender — deliberately separate.**
 
 ```bash
 cd apps/wa-bridge
 node sender.js
 ```
 
-It prints a QR code. On the phone: **WhatsApp → Settings → Linked Devices →
-Link a Device**. Scan it. Use the **demo number**, not his primary.
+Same scan, same phone, its own QR. From that moment ARIA can deliver
+messages — but only the ones the autonomy engine has already approved, for
+contacts he has explicitly enabled, in the categories he named, at low risk.
+To stop sending at any time: unlink the device on the phone, or press the
+emergency stop, or stop the process.
 
-From that moment ARIA can deliver messages — but only the ones the autonomy
-engine has already approved, for contacts he has explicitly enabled, in the
-categories he named, at low risk. To stop sending at any time: unlink the
-device on the phone, or press the emergency stop, or stop the process.
+The sender is **not** started by `start-whatsapp-bridge.ps1`. Observing is the
+default; sending stays a deliberate act.
 
-The sender is not started by `start-whatsapp-bridge.ps1`. Observing is the
-default and sending should require a deliberate act.
+Before linking the sender, the delivery path can be checked without a device
+at all — `node sender.js --dry-run` claims the real approved messages, shows
+what would be sent, and puts them back untouched.
 
 ## Losing a claimed message — fixed 2026-08-17
 
@@ -166,7 +204,7 @@ internally, so absolute paths work from any directory and need no `cd` at all.
 Every command below is one line, runnable as written.
 
 ```powershell
-# receive (safe: cannot send)
+# receive (safe: cannot send). Opens the QR page by itself if pairing is needed.
 C:\Users\MORICE\projects\aria\start-whatsapp-bridge.ps1
 ```
 
@@ -181,8 +219,9 @@ node C:\Users\MORICE\projects\aria\apps\wa-bridge\sender.js
 ```
 
 ```powershell
-# render that QR full size, when the terminal one will not scan
-C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe C:\Users\MORICE\projects\aria\scripts\render-whatsapp-qr.py
+# render a QR full size by hand. Only needed for the sender now - the observer's
+# is opened automatically by start-whatsapp-bridge.ps1. Add --role sender.
+C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe C:\Users\MORICE\projects\aria\scripts\render-whatsapp-qr.py --role sender
 ```
 
 ```powershell
