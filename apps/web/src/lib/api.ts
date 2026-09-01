@@ -716,11 +716,20 @@ export const api = {
     content: string,
     onChunk: (text: string) => void,
   ): Promise<void> {
+    // This is the one call that cannot go through `request()` — it needs the
+    // raw body to stream rather than a parsed one — so it has to repeat what
+    // `request()` does. It previously repeated only the Content-Type, which
+    // meant chat was the single unauthenticated call in the client: with
+    // ARIA_PASSWORD set, every message came back 401 and the user was told
+    // "API error 401" instead of being sent to the login page.
     const res = await fetch(`${API_URL}/conversations/${conversationId}/messages`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify({ content }),
     });
+    if (res.status === 401 && typeof window !== "undefined") {
+      window.location.href = "/login";
+    }
     if (!res.ok || !res.body) throw new Error(`API error ${res.status}`);
 
     const reader = res.body.getReader();
