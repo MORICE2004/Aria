@@ -24,6 +24,7 @@ import {
   Bot,
   CheckCircle2,
   CircleSlash,
+  Clock,
   Coins,
   Hand,
   Inbox,
@@ -280,13 +281,27 @@ export default function ActivityPage() {
         />
       </section>
 
-      {/* --- What ARIA did on her own --- */}
-      <section className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      {/* --- What ARIA did on her own ---
+           "Delivered" and "Queued" are separate numbers on purpose. A reply
+           ARIA wrote and could not deliver is not a reply she made, and one
+           counter covering both would let an unlinked sender look like a
+           working one. */}
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-6">
         <Stat
-          label="Auto-answered"
+          label="Delivered"
           value={activity.autonomous.sent}
           icon={Bot}
           tone="good"
+          hint="actually sent"
+        />
+        <Stat
+          label="Queued"
+          value={activity.autonomous.queued}
+          icon={Clock}
+          tone={activity.autonomous.queued > 0 ? "warn" : "default"}
+          hint={
+            activity.autonomous.queued > 0 ? "written, not delivered" : "nothing held"
+          }
         />
         <Stat
           label="Awaiting you"
@@ -421,12 +436,13 @@ export default function ActivityPage() {
       <section className="glass rounded-xl p-4">
         <h2 className="text-sm font-medium">Recent autonomous responses</h2>
         <p className="mt-1 text-xs text-zinc-500">
-          Every message ARIA sent on her own, with the reasons she was allowed
-          to. Correcting one teaches her; ignoring one teaches her nothing.
+          Every message ARIA wrote on her own, with the reasons she was allowed
+          to and whether it actually left. Correcting one teaches her; ignoring
+          one teaches her nothing.
         </p>
         {responses.length === 0 ? (
           <p className="mt-4 text-xs text-zinc-500">
-            ARIA has not sent anything on her own.
+            ARIA has not written anything on her own.
           </p>
         ) : (
           <ul className="mt-4 space-y-3">
@@ -441,16 +457,21 @@ export default function ActivityPage() {
                   <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] font-mono text-zinc-500">
                     {r.model}
                   </span>
+                  {/* Queued is amber, not grey. Grey reads as "fine", and a
+                      reply sitting undelivered is not fine — it is the state
+                      an unlinked sender leaves everything in. */}
                   <span
                     className={`text-[10px] ${
                       r.send_status === "sent"
                         ? "text-emerald-300"
-                        : r.send_status === "blocked"
+                        : r.send_status === "blocked" || r.send_status === "failed"
                           ? "text-red-300"
-                          : "text-zinc-400"
+                          : r.send_status === "queued"
+                            ? "text-amber-300"
+                            : "text-zinc-400"
                     }`}
                   >
-                    {r.send_status}
+                    {r.send_status === "queued" ? "queued - not delivered" : r.send_status}
                   </span>
                   {r.user_reaction === "none" ? (
                     <span className="text-[10px] text-amber-300">unreviewed</span>
@@ -465,7 +486,14 @@ export default function ActivityPage() {
                   They said: <span className="text-zinc-400">{r.incoming}</span>
                 </p>
                 <p className="mt-1 text-sm text-zinc-200">
-                  ARIA replied: {r.response}
+                  {/* "replied" is a claim about delivery. Only say it when it
+                      is true; otherwise say what actually happened. */}
+                  {r.send_status === "sent"
+                    ? "ARIA replied: "
+                    : r.send_status === "queued"
+                      ? "ARIA wrote, and it is still waiting to go out: "
+                      : "ARIA wrote, and it never left: "}
+                  {r.response}
                 </p>
 
                 <details className="mt-2">
