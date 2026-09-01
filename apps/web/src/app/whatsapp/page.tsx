@@ -102,9 +102,14 @@ export default function WhatsAppPage() {
   return (
     <div className="mx-auto max-w-4xl">
       <h2 className="mb-1 text-2xl font-semibold">WhatsApp</h2>
+      {/* This said "ARIA is in observe mode" unconditionally, whatever the
+          mode actually was — so the page describing her autonomy was the one
+          place understating it. The live mode is read from the API and shown
+          in the card below; this line describes the page, not the state. */}
       <p className="mb-6 text-sm text-zinc-400">
-        ARIA is in observe mode: she reads and learns, and has no ability to
-        send. Raising autonomy is always deliberate and always logged.
+        Everything ARIA may do on WhatsApp, and everything that stops her.
+        Raising autonomy is always deliberate and always logged; lowering it
+        takes effect immediately.
       </p>
 
       {error && <p role="alert" className="mb-4 text-sm text-red-400">{error}</p>}
@@ -171,13 +176,18 @@ export default function WhatsAppPage() {
           ))}
         </div>
 
+        {/* The OpenClaw gateway this notice used to name was replaced by the
+            read-only Baileys bridge. Pointing him at a command that no longer
+            exists is worse than saying nothing. */}
         {data && !data.channel_linked && (
           <p className="mt-4 border-t border-white/10 pt-3 text-xs text-amber-300/80">
-            No real WhatsApp account is linked yet — everything below is
-            simulated. Link one with{" "}
+            No WhatsApp device is linked, so ARIA is seeing nothing — everything
+            below is simulated. Run{" "}
             <code className="rounded bg-white/5 px-1.5 py-0.5">
-              openclaw channels login --channel whatsapp
-            </code>
+              .\start-whatsapp-bridge.ps1
+            </code>{" "}
+            and scan the QR page it opens (WhatsApp → Settings → Linked
+            Devices). The bridge cannot send; linking it only lets her read.
           </p>
         )}
       </section>
