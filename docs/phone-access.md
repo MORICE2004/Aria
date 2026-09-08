@@ -1,47 +1,88 @@
-# Using ARIA on your phone
+# Using ARIA from another PC, or your phone
 
-ARIA runs on your PC. Your phone reaches it over your home Wi-Fi — so the PC
-must be on, the servers running, and the phone on the SAME Wi-Fi network.
+ARIA runs on one machine — the PC where the databases, the API, the dashboard
+and the WhatsApp bridge live. Nothing here deploys her anywhere else. What these
+options change is *how another device reaches that machine*.
 
-## One-time setup
+| | Works from | Needs |
+|---|---|---|
+| **Home Wi-Fi** | the same network only | firewall opened once |
+| **Tailscale** | anywhere with internet | Tailscale on both devices, one account |
 
-1. **Open the firewall** (once): Start menu → type "PowerShell" → right-click →
-   *Run as administrator*, then:
-   ```powershell
-   cd C:\Users\MORICE\projects\aria
-   .\allow-phone.ps1
-   ```
-2. **Add your Gemini key**: get a free key at https://aistudio.google.com
-   (→ "Get API key"), then open `C:\Users\MORICE\projects\aria\.env` and set:
-   ```
-   GEMINI_API_KEY=your-key-here
-   ```
-   (`LLM_PROVIDER=gemini` is already set.)
+Either way the ARIA PC must be **on and running** (`.\aria.ps1 start`). She is
+not in the cloud; a sleeping PC is an unreachable ARIA.
 
-## Every time you want ARIA
+---
 
-Double-click **`start-aria.ps1`** (in the project folder). It starts the
-databases, the API, and the dashboard, then prints two links:
+## From anywhere: Tailscale
 
-- On this PC: `http://localhost:3000`
-- On your phone: `http://<PC-IP>:3000`  (e.g. `http://10.0.91.189:3000`)
+This is the one to use if you want ARIA from a second PC, from the office, or
+from mobile data.
 
-Open the phone link in your phone's browser. For an app-like experience,
-use the browser menu → **Add to Home Screen** — ARIA gets its own icon.
+```powershell
+.\aria.ps1 remote
+```
 
-## If the phone can't connect
+It installs Tailscale if missing, signs this machine in, opens the firewall to
+your own devices only, and prints the address to use.
 
-- Same Wi-Fi? Phone and PC must be on the same network (not mobile data).
-- Firewall: did you run `allow-phone.ps1` as admin?
-- PC IP changed? Routers reassign addresses. Re-run `start-aria.ps1` — it
-  prints the current IP. (To pin it, set a DHCP reservation in your router.)
-- Servers running? The two PowerShell windows `start-aria.ps1` opened must
-  stay open.
+Then, on the other PC or phone, once:
 
-## Security note
+1. Install Tailscale: <https://tailscale.com/download>
+2. Sign in with the **same account**
+3. Open the address the script printed (`http://100.x.y.z:3000`)
 
-Right now `ARIA_PASSWORD` is empty, so no login is required — fine on a
-trusted home network. If others share your Wi-Fi, set `ARIA_PASSWORD` and
-`SECRET_KEY` in `.env` (a SECRET_KEY was already generated for you) to require
-a password. Using ARIA from OUTSIDE your home (mobile data, anywhere) needs
-cloud hosting or a tunnel — a separate, later step.
+### Why not just forward a port
+
+ARIA holds WhatsApp credentials that can send messages as you, a memory of your
+personal life, and an API that acts on your behalf. A forwarded port or a public
+tunnel puts that on the open internet, where the only thing between a stranger
+and ARIA is one password.
+
+A tailnet is a private network between your own devices. There is no public
+address, nothing is published, and a machine not signed into your account cannot
+see ARIA at all. The CORS rules in `apps/api/src/main.py` already allow the
+Tailscale range (`100.64.0.0/10`) and MagicDNS names, and `/connect` reports the
+tailnet address when there is one — the support was built in; this just turns it
+on.
+
+---
+
+## On the same Wi-Fi
+
+Simpler, but only at home.
+
+```powershell
+.\aria.ps1 phone
+```
+
+Run that once **as Administrator** (Start menu → PowerShell → right-click → Run
+as administrator). It opens ports 3000 and 8000 on private networks only.
+
+Then `.\aria.ps1 start` prints the address, or `.\aria.ps1 status` shows it any
+time. On the phone, use the browser menu → **Add to Home Screen** and ARIA gets
+her own icon.
+
+---
+
+## Security, honestly
+
+**Set `ARIA_PASSWORD` in `.env` before using ARIA off this machine.** Without
+it, anyone who reaches her can read your memory and act as you — and ARIA
+refuses to send autonomously at all, by design, when no password is set.
+
+The password is what makes remote access safe; Tailscale is what makes it
+private. They solve different problems and you want both.
+
+---
+
+## If it will not connect
+
+- **Is ARIA running?** `.\aria.ps1 status` says what is up and what is not.
+- **Is the PC awake?** Sleep ends every connection.
+- **Tailscale on both ends?** Both devices must be signed into the same
+  account. `tailscale status` lists what it can see.
+- **Same Wi-Fi** (Wi-Fi option only) — a phone on mobile data is not on your
+  network. That is exactly the case Tailscale solves.
+- **Address changed?** Routers reassign LAN addresses; the tailnet address does
+  not change, which is the other reason to prefer it.
