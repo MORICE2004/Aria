@@ -1,7 +1,7 @@
 # Run this ONCE, as Administrator, to let your phone reach ARIA over Wi-Fi.
 # Right-click this file -> "Run with PowerShell" won't be elevated; instead:
 #   1. Start menu -> type "PowerShell" -> right-click -> "Run as administrator"
-#   2. Run:  cd C:\Users\MORICE\projects\aria ;  .\allow-phone.ps1
+#   2. cd to the repo folder, then run:  .\aria.ps1 phone
 #
 # It opens the Windows Firewall for ports 3000 (dashboard) and 8000 (API)
 # on PRIVATE networks only (your home Wi-Fi) - not public networks.

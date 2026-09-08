@@ -487,22 +487,22 @@ and it will not run a relative executable path without `.\`. Every command
 below is one line and works from any directory.
 
 ```powershell
-C:\Users\MORICE\projects\aria\start-aria.ps1
+.\aria.ps1 start
 ```
 
 ```powershell
-C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe -m pytest -q
+.\aria.ps1 test
 ```
 
 (pytest needs `apps/api` as the working directory — `Set-Location` there first,
 on its own line.)
 
 ```powershell
-Set-Location C:\Users\MORICE\projects\aria\apps\web; npm run lint; npm run build
+.\aria.ps1 check
 ```
 
 ```powershell
-node C:\Users\MORICE\projects\aria\apps\wa-bridge\sender.js --dry-run
+.\aria.ps1 send -DryRun
 ```
 
 See `docs/ARIA_WHATSAPP.md` for the rest of the bridge commands, including

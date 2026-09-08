@@ -8,11 +8,11 @@ code. The result looks like a broken pairing flow when the code itself is fine.
 This renders the same code as a real image, full size, in the browser.
 
     # terminal 1 - the device you are pairing
-    node C:\Users\MORICE\projects\aria\apps\wa-bridge\index.js    # receiving
-    node C:\Users\MORICE\projects\aria\apps\wa-bridge\sender.js   # sending
+    .\aria.ps1 bridge     # the device that receives
+    .\aria.ps1 send       # the device that delivers
 
     # terminal 2 - picks up whichever code is waiting
-    C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe C:\Users\MORICE\projects\aria\scripts\render-whatsapp-qr.py
+    .\aria.ps1 qr
 
 Raw docstring, because those paths contain \U and \a — Python reads those as
 escape sequences in a normal string and the module stops importing.

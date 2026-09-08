@@ -183,7 +183,7 @@ line, and an absolute path to the interpreter — a relative one is not run at
 all:
 
 ```powershell
-C:\Users\MORICE\projects\aria\apps\api\.venv\Scripts\python.exe C:\Users\MORICE\projects\aria\scripts\import-whatsapp-export.py --sender "Morice Magnus" --relationship partner --password "..." "C:/path/WhatsApp Chat with Ann.zip"
+.\apps\api\.venv\Scripts\python.exe .\scripts\import-whatsapp-export.py --sender "Morice Magnus" --relationship partner --password "..." "C:/path/WhatsApp Chat with Ann.zip"
 ```
 
 Or the audience picker on `/style`. Import a mixed set with no relationship to
