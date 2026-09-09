@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     imap_host: str = ""
     imap_port: int = 993
 
+    # --- Web search for Research Agent ---
+    web_search_enabled: bool = False
+    web_search_provider: str = "duckduckgo"
+    tavily_api_key: str = ""
+
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
 

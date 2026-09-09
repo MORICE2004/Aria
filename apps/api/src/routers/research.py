@@ -110,12 +110,18 @@ async def list_sources(memory_service=Depends(get_memory_service)):
     an answer's footnote.
     """
     agent = get_research_agent(memory_service)
+    available = [s.name for s in agent._sources]
+    has_web = "web" in available
     return {
-        "available": [s.name for s in agent._sources],
-        "unavailable": ["web"],
+        "available": available,
+        "unavailable": [] if has_web else ["web"],
         "note": (
-            "ARIA cannot search the web: no search provider is configured. "
-            "Adding one is a single adapter implementing SourceProvider plus "
-            "an API key — see src/research/sources.py."
+            "ARIA can search the live web."
+            if has_web
+            else (
+                "ARIA cannot search the web: no search provider is configured. "
+                "Adding one is a single adapter implementing SourceProvider plus "
+                "an API key — see src/research/sources.py."
+            )
         ),
     }

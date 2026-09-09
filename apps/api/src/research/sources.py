@@ -179,6 +179,157 @@ class ConversationSource:
         return results[:limit]
 
 
+class WebSearchSource:
+    """The live web, searched via DuckDuckGo or Tavily.
+
+    Returns real-time evidence from the web with full citations (title + URL)
+    and snippets.
+    """
+
+    name = "web"
+
+    def __init__(
+        self,
+        *,
+        provider: str = "duckduckgo",
+        api_key: str = "",
+        timeout: float = 8.0,
+    ):
+        self.provider = provider
+        self.api_key = api_key
+        self.timeout = timeout
+
+    async def search(
+        self, session: AsyncSession, query: str, *, limit: int = 5
+    ) -> list[SourceResult]:
+        terms = [t for t in _keywords(query) if len(t) > 2]
+        if not terms:
+            return []
+
+        if self.provider == "tavily" and self.api_key:
+            return await self._search_tavily(query, limit=limit)
+        return await self._search_duckduckgo(query, limit=limit)
+
+    async def _search_duckduckgo(
+        self, query: str, *, limit: int = 5
+    ) -> list[SourceResult]:
+        import httpx
+
+        url = "https://api.duckduckgo.com/"
+        params = {
+            "q": query,
+            "format": "json",
+            "no_html": "1",
+            "skip_disambig": "1",
+        }
+        results: list[SourceResult] = []
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.get(url, params=params)
+                if resp.status_code != 200:
+                    return []
+                data = resp.json()
+
+            abstract = (data.get("AbstractText") or "").strip()
+            source_url = (data.get("AbstractURL") or "").strip()
+            source_name = (data.get("AbstractSource") or "").strip() or "DuckDuckGo"
+            if abstract:
+                citation = (
+                    f"web: {source_name} ({source_url})"
+                    if source_url
+                    else f"web: {source_name}"
+                )
+                results.append(
+                    SourceResult(
+                        content=abstract,
+                        citation=citation,
+                        source=self.name,
+                        score=0.9,
+                        reference_id=source_url or "ddg:abstract",
+                    )
+                )
+
+            topics = data.get("RelatedTopics") or []
+            for topic in topics:
+                if len(results) >= limit:
+                    break
+                if isinstance(topic, dict):
+                    text = (topic.get("Text") or "").strip()
+                    first_url = (topic.get("FirstURL") or "").strip()
+                    if text:
+                        citation = f"web: {first_url}" if first_url else "web: duckduckgo"
+                        results.append(
+                            SourceResult(
+                                content=text,
+                                citation=citation,
+                                source=self.name,
+                                score=0.75,
+                                reference_id=first_url or "ddg:topic",
+                            )
+                        )
+                    for sub in topic.get("Topics") or []:
+                        if len(results) >= limit:
+                            break
+                        sub_text = (sub.get("Text") or "").strip()
+                        sub_url = (sub.get("FirstURL") or "").strip()
+                        if sub_text:
+                            citation = f"web: {sub_url}" if sub_url else "web: duckduckgo"
+                            results.append(
+                                SourceResult(
+                                    content=sub_text,
+                                    citation=citation,
+                                    source=self.name,
+                                    score=0.7,
+                                    reference_id=sub_url or "ddg:subtopic",
+                                )
+                            )
+        except Exception:
+            return []
+
+        return results[:limit]
+
+    async def _search_tavily(
+        self, query: str, *, limit: int = 5
+    ) -> list[SourceResult]:
+        import httpx
+
+        url = "https://api.tavily.com/search"
+        payload = {
+            "api_key": self.api_key,
+            "query": query,
+            "search_depth": "basic",
+            "max_results": limit,
+        }
+        results: list[SourceResult] = []
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code != 200:
+                    return []
+                data = resp.json()
+
+            for item in data.get("results") or []:
+                content = (item.get("content") or "").strip()
+                title = (item.get("title") or "Web Result").strip()
+                item_url = (item.get("url") or "").strip()
+                score = float(item.get("score") or 0.8)
+                if content:
+                    results.append(
+                        SourceResult(
+                            content=content,
+                            citation=f"web: {title} ({item_url})",
+                            source=self.name,
+                            score=min(1.0, max(0.0, score)),
+                            reference_id=item_url,
+                        )
+                    )
+        except Exception:
+            return []
+
+        return results[:limit]
+
+
 _STOPWORDS = {
     "what", "when", "where", "which", "who", "whom", "whose", "why", "how",
     "does", "did", "do", "is", "are", "was", "were", "the", "and", "for",

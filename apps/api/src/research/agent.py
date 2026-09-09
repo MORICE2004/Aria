@@ -94,6 +94,12 @@ class ResearchAgent:
     def __init__(self, sources: list[SourceProvider]):
         self._sources = sources
 
+    @property
+    def scope_note(self) -> str:
+        if any(s.name == "web" for s in self._sources):
+            return _SCOPE_NOTE_WITH_WEB
+        return _SCOPE_NOTE
+
     async def research(
         self,
         session: AsyncSession,
@@ -129,7 +135,7 @@ class ResearchAgent:
             sub_questions=sub_questions,
             evidence=evidence,
             sources_searched=[s.name for s in self._sources],
-            scope_note=_SCOPE_NOTE,
+            scope_note=self.scope_note,
         )
 
     async def _plan(
@@ -213,6 +219,11 @@ _SCOPE_NOTE = (
     "comes from the internet."
 )
 
+_SCOPE_NOTE_WITH_WEB = (
+    "Researched from your knowledge base (memory, uploaded documents, message history) "
+    "and live web search."
+)
+
 
 async def _complete(llm: LLMProvider, system: str, user: str) -> str:
     parts = [
@@ -227,13 +238,32 @@ async def _complete(llm: LLMProvider, system: str, user: str) -> str:
 _agent: ResearchAgent | None = None
 
 
-def get_research_agent(memory_service) -> ResearchAgent:
+def get_research_agent(memory_service, *, settings=None) -> ResearchAgent:
     """Build the agent with every available source.
 
     A new source (web search, email, calendar) is added here and nowhere else.
     """
-    from src.research.sources import ConversationSource, DocumentSource, MemorySource
-
-    return ResearchAgent(
-        [MemorySource(memory_service), DocumentSource(), ConversationSource()]
+    from src.core.config import get_settings
+    from src.research.sources import (
+        ConversationSource,
+        DocumentSource,
+        MemorySource,
+        WebSearchSource,
     )
+
+    s = settings or get_settings()
+    sources: list[SourceProvider] = [
+        MemorySource(memory_service),
+        DocumentSource(),
+        ConversationSource(),
+    ]
+
+    if getattr(s, "web_search_enabled", False):
+        sources.append(
+            WebSearchSource(
+                provider=getattr(s, "web_search_provider", "duckduckgo"),
+                api_key=getattr(s, "tavily_api_key", ""),
+            )
+        )
+
+    return ResearchAgent(sources)
