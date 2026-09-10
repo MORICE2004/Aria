@@ -86,6 +86,10 @@ class ContactUpdate(BaseModel):
     autonomy_enabled: bool | None = None
     allowed_actions: list[str] | None = None
     forbidden_actions: list[str] | None = None
+    allowed_topics: list[str] | None = None
+    restricted_topics: list[str] | None = None
+    language_preference: str | None = None
+    last_reviewed_at: datetime | None = None
     paused: bool | None = None
     taken_over: bool | None = None
 
@@ -100,6 +104,10 @@ class ContactOut(BaseModel):
     autonomy_enabled: bool
     allowed_actions: list[str]
     forbidden_actions: list[str]
+    allowed_topics: list[str] = []
+    restricted_topics: list[str] = []
+    language_preference: str = "auto"
+    last_reviewed_at: datetime | None = None
     paused: bool
     taken_over: bool
     # Effective permission for this contact right now, and why.
@@ -273,6 +281,10 @@ async def _to_contact_out(session: AsyncSession, contact: Contact) -> ContactOut
         autonomy_enabled=contact.autonomy_enabled,
         allowed_actions=list(contact.allowed_actions or risk.DEFAULT_ALLOWED_ACTIONS),
         forbidden_actions=list(contact.forbidden_actions or []),
+        allowed_topics=list(getattr(contact, "allowed_topics", None) or []),
+        restricted_topics=list(getattr(contact, "restricted_topics", None) or []),
+        language_preference=getattr(contact, "language_preference", "auto") or "auto",
+        last_reviewed_at=getattr(contact, "last_reviewed_at", None),
         paused=contact.paused,
         taken_over=contact.taken_over,
         effective_mode=mode.value,
@@ -367,6 +379,32 @@ async def update_contact(
         if unknown:
             raise HTTPException(422, f"unknown action type(s): {sorted(unknown)}")
         contact.forbidden_actions = list(body.forbidden_actions)
+
+    if body.allowed_topics is not None:
+        contact.allowed_topics = list(body.allowed_topics)
+        session.add(
+            AuditEvent(
+                action_request_id="contact_policy",
+                event="allowed_topics_changed",
+                detail=f"{contact.handle}: allowed_topics -> {body.allowed_topics}",
+            )
+        )
+
+    if body.restricted_topics is not None:
+        contact.restricted_topics = list(body.restricted_topics)
+        session.add(
+            AuditEvent(
+                action_request_id="contact_policy",
+                event="restricted_topics_changed",
+                detail=f"{contact.handle}: restricted_topics -> {body.restricted_topics}",
+            )
+        )
+
+    if body.language_preference is not None:
+        contact.language_preference = body.language_preference
+
+    if body.last_reviewed_at is not None:
+        contact.last_reviewed_at = body.last_reviewed_at
 
     if body.autonomy_enabled is not None:
         if body.autonomy_enabled:
@@ -518,7 +556,9 @@ class IngestIn(BaseModel):
 
     handle: str = Field(min_length=1, max_length=120)
     name: str = Field(default="", max_length=200)
-    body: str = Field(min_length=1, max_length=20_000)
+    body: str = Field(default="", max_length=20_000)
+    audio_base64: str | None = None
+    mimetype: str = "audio/ogg"
     direction: str = Field(default="in", pattern="^(in|out)$")
     # Transport-assigned message id. The bridge always sends one; it is the
     # dedupe key. Optional only so the endpoint stays usable by hand, in which
@@ -566,29 +606,29 @@ async def ingest_message(
     request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """Receive a real WhatsApp message. Store it, acknowledge, and stop.
-
-    This endpoint does one thing: INSERT and COMMIT. It does not classify,
-    draft, decide, or send. Understanding the message is the worker's job.
-
-    That separation is the fix for the original data-loss bug, and it is not
-    only about crashes. The first version of this rewrite still classified
-    inline, and the very first live test failed: a cold local model took 33
-    seconds, the bridge's HTTP client gave up at 20, and the bridge could not
-    tell "ARIA never got it" from "ARIA got it and is thinking". It had to
-    assume the worst and hold the message — correct, but it means receipt
-    latency was hostage to model latency. A receiver whose speed depends on an
-    LLM is a receiver that will time out, and a receiver that times out under
-    load is how messages get lost in the first place.
-
-    So: acknowledge in milliseconds, process out of band, expose the result
-    through the queue endpoints. The bridge only ever needed to know the
-    message was safe.
-
-    Authenticated by a shared secret rather than the dashboard JWT, because the
-    caller is a local service, not a browser.
-    """
+    """Receive a real WhatsApp message. Store it, acknowledge, and stop."""
     _require_ingest_secret(request)
+
+    body_text = body.body.strip()
+    if not body_text and body.audio_base64:
+        import base64
+        import logging
+        from src.llm import get_router
+        from src.llm.router import TaskClass
+        try:
+            routed = get_router().resolve(TaskClass.ROUTINE, session)
+            if hasattr(routed.provider, "transcribe_audio"):
+                audio_bytes = base64.b64decode(body.audio_base64)
+                transcription = await routed.provider.transcribe_audio(audio_bytes, body.mimetype)
+                body_text = f"[Voice Note]: {transcription}" if transcription else "[Audio message]"
+            else:
+                body_text = "[Voice Note]"
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Voice note transcription failed: %s", exc)
+            body_text = "[Voice Note]"
+
+    if not body_text:
+        body_text = "[Empty message]"
 
     dedupe_key = body.message_id.strip() or _fallback_dedupe_key(body)
     sent_at = (
@@ -602,10 +642,23 @@ async def ingest_message(
         dedupe_key=dedupe_key,
         handle=body.handle,
         name=body.name,
-        body=body.body,
+        body=body_text,
         direction=body.direction,
         sent_at=sent_at,
     )
+
+    try:
+        from src.routers.webhooks import dispatch_webhook
+        dispatch_webhook("whatsapp.message_received", {
+            "queue_id": row.id,
+            "handle": body.handle,
+            "name": body.name,
+            "body": body_text,
+            "direction": body.direction,
+            "message_id": dedupe_key,
+        })
+    except Exception:
+        pass
 
     # A redelivery is acknowledged, never reprocessed. This is what stops a
     # duplicate message from producing a duplicate response.
@@ -707,10 +760,11 @@ class DraftOut(BaseModel):
 
 class DecideDraftIn(BaseModel):
     # approved = "good, I'll send it myself"; edited = he rewrote it;
-    # rejected = wrong. ARIA cannot send in any case.
+    # rejected = wrong. Optional send=true dispatches via sender.
     decision: str = Field(pattern="^(approved|edited|rejected)$")
     final: str = Field(default="", max_length=20_000)
     note: str = Field(default="", max_length=1_000)
+    send: bool = False
 
 
 class DecideDraftOut(BaseModel):
@@ -775,7 +829,22 @@ async def decide_draft(
         contact_id=draft.contact_id,
         note=body.note,
     )
-    return DecideDraftOut(status=draft.status, lessons=lessons)
+
+    sent = False
+    if body.send and body.decision in ("approved", "edited"):
+        contact = await session.get(Contact, draft.contact_id)
+        if contact:
+            text_to_send = draft.final or draft.draft
+            await sending.request_send(
+                session,
+                contact=contact,
+                body=text_to_send,
+                origin="approved",
+                summary=f"Approved reply to {contact.name}: {text_to_send[:120]}",
+            )
+            sent = True
+
+    return DecideDraftOut(status=draft.status, lessons=lessons, sent=sent)
 
 
 # ---------- autonomy engine: preview, responses, readiness ----------

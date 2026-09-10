@@ -147,7 +147,23 @@ async function deliverApproved(sock) {
     }
 
     try {
-      await sock.sendMessage(message.handle, { text: message.body });
+      let jid = message.handle;
+      if (!jid.includes("@")) {
+        const clean = jid.replace(/[^0-9]/g, "");
+        jid = `${clean}@s.whatsapp.net`;
+      }
+
+      // Simulate natural typing presence (inspired by Evolution API & Baileys)
+      try {
+        await sock.sendPresenceUpdate("composing", jid);
+        const typingDelay = Math.min(3000, Math.max(800, (message.body?.length || 10) * 35));
+        await new Promise((resolve) => setTimeout(resolve, typingDelay));
+        await sock.sendPresenceUpdate("paused", jid);
+      } catch {
+        // Presence is non-blocking; continue to send
+      }
+
+      await sock.sendMessage(jid, { text: message.body });
       await post(cfg.confirmUrl, { id: message.id, ok: true });
       console.log(
         `[sender] sent to ${message.handle}: ` +

@@ -165,15 +165,16 @@ async def request_send(
     request.payload = {**request.payload, "action_request_id": request.id}
     await session.commit()
 
-    if origin == "autonomous":
+    if origin in ("autonomous", "approved"):
         await gateway.approve(session, request.id)
         session.add(
             AuditEvent(
                 action_request_id=request.id,
-                event="pre_authorised",
+                event="pre_authorised" if origin == "autonomous" else "user_approved",
                 detail=(
-                    "approved by the contact's standing autonomy policy, "
-                    "not by a per-message click"
+                    "approved by the contact's standing autonomy policy"
+                    if origin == "autonomous"
+                    else "approved by user review of draft"
                 ),
             )
         )
@@ -321,6 +322,19 @@ async def confirm_sent(
         )
     )
     await session.commit()
+
+    if ok:
+        try:
+            from src.routers.webhooks import dispatch_webhook
+            dispatch_webhook("whatsapp.message_sent", {
+                "outbound_id": message.id,
+                "handle": message.handle,
+                "body": message.body,
+                "sent_at": message.sent_at.isoformat() if message.sent_at else None,
+            })
+        except Exception:
+            pass
+
     return message
 
 

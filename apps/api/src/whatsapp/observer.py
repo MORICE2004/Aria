@@ -54,9 +54,9 @@ Reply with ONLY a JSON object:
   "language": "<language of the message>"
 }}
 
-Mark "sensitive" generously — a false positive only causes ARIA to ask
-MORICE, which is safe. A false negative could let ARIA act on something it
-should not."""
+Mark "sensitive" for money requests, loans, commitments, employment, contracts, legal issues, secrets, or serious relationship/emotional disputes.
+Do NOT mark normal casual greetings, friendly catchups, or everyday social chat as sensitive.
+"""
 
 
 @dataclass(frozen=True)
@@ -185,9 +185,15 @@ async def observe(
 
     mode, reason = await autonomy.resolve_for_contact(session, contact)
 
-    # Outbound messages (MORICE's own) are stored for style learning only —
-    # there is nothing to classify or reply to.
+    # Outbound messages (MORICE's own) trigger real-time style learning & insight extraction.
     if direction == "out":
+        try:
+            from src.communication import learning as comm_learning
+            await comm_learning.refresh_from_messages(session, contact)
+            recent = await recent_messages(session, contact.id, limit=10)
+            await comm_learning.extract_chat_insights(session, model_router, contact, recent)
+        except Exception as exc:
+            logger.warning("Background learning from outbound message failed: %s", exc)
         return Observation(contact, message, mode, reason, None, None)
 
     # Classification is ROUTINE work: runs locally, so the message content
@@ -305,6 +311,7 @@ async def _queue_autonomous_reply(
         origin="autonomous",
         autonomous_response_id=response.id,
         summary=f"Autonomous reply to {contact.name}: {reply[:120]}",
+        incoming=incoming,
     )
     return response.id
 
@@ -331,9 +338,13 @@ async def _prepare_draft(
     from src.memory import get_memory_service
     from src.models import MessageDraft
 
+    # Sensitive messages (money, contracts, legal, emotional...) are
+    # deliberately NOT drafted. A plausible-sounding draft on a sensitive topic
+    # is worse than none: it invites a fast approval on exactly the messages
+    # that deserve slow thought.
     if classification is not None and classification.is_sensitive:
         logger.info(
-            "Skipping draft for %s: sensitive (%s)",
+            "Skipping draft for %s: sensitive message (%s)",
             contact.handle, ", ".join(classification.sensitive),
         )
         return None, None

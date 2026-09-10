@@ -89,10 +89,10 @@ class FakeEmbedder(EmbeddingProvider):
 
 @pytest.fixture(autouse=True)
 def _hermetic_auth():
-    """Force auth OFF for every test unless a test asks for it.
+    """Force auth and web search OFF for every test unless a test asks for it.
 
     The suite used to inherit whatever was in the developer's .env, so setting
-    a real ARIA_PASSWORD on this machine broke a test that had nothing to do
+    a real ARIA_PASSWORD or search key on this machine broke a test that had nothing to do
     with the change. A test suite whose result depends on an untracked local
     file is a test suite that cannot be trusted on anyone else's machine.
 
@@ -103,9 +103,12 @@ def _hermetic_auth():
 
     settings = get_settings()
     before = settings.aria_password
+    before_web = settings.web_search_enabled
     settings.aria_password = ""
+    settings.web_search_enabled = False
     yield
     settings.aria_password = before
+    settings.web_search_enabled = before_web
 
 
 @pytest.fixture(autouse=True)

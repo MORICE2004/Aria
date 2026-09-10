@@ -17,6 +17,7 @@ Two rules govern everything here:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -24,7 +25,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.communication import style
-from src.models import Contact, LearningEvent, StylePattern, WhatsAppMessage
+from src.models import (
+    Contact,
+    LearningEvent,
+    MessageDraft,
+    StylePattern,
+    WhatsAppMessage,
+)
 
 # Confidence curve: evidence / (evidence + K). K sets how much evidence is
 # "enough". At K=8: 1 sample -> 0.11, 8 -> 0.50, 30 -> 0.79, 100 -> 0.93.
@@ -618,3 +625,240 @@ async def build_profile_block(
         "different audience than this one."
     )
     return "\n".join(lines)
+
+
+@dataclass(frozen=True)
+class DialogueExemplar:
+    """A real dialogue turn showing how MORICE replied."""
+
+    incoming: str
+    reply: str
+    contact_name: str
+    scope: str
+    score: float = 0.0
+
+
+async def get_relevant_exemplars(
+    session: AsyncSession,
+    incoming: str,
+    contact: Contact | None = None,
+    limit: int = 4,
+) -> list[DialogueExemplar]:
+    """Retrieve genuine past dialogue exchanges showing how MORICE replied.
+
+    Pulls from two high-signal sources:
+    1. Historical inbound -> outbound message pairs from WhatsApp.
+    2. MessageDraft rows that MORICE approved or edited.
+
+    Pairs are ranked by contact specificity, keyword similarity with incoming, and recency.
+    """
+    candidates: list[DialogueExemplar] = []
+    incoming_tokens = set(re.findall(r"\w+", incoming.lower())) if incoming else set()
+
+    # Source 1: Approved or edited drafts (explicitly reviewed by MORICE)
+    draft_query = (
+        select(MessageDraft, Contact)
+        .join(Contact, MessageDraft.contact_id == Contact.id)
+        .where(
+            MessageDraft.status.in_(["approved", "edited"]),
+            MessageDraft.incoming != "",
+        )
+        .order_by(MessageDraft.created_at.desc())
+        .limit(20)
+    )
+    draft_rows = (await session.execute(draft_query)).all()
+    for draft, draft_contact in draft_rows:
+        reply_text = (draft.final or draft.draft or "").strip()
+        if not reply_text:
+            continue
+
+        score = 0.0
+        if contact and draft.contact_id == contact.id:
+            score += 10.0
+            scope = f"contact:{contact.id}"
+        elif contact and contact.relationship and contact.relationship == draft_contact.relationship:
+            score += 5.0
+            scope = f"relationship:{contact.relationship}"
+        else:
+            scope = "global"
+
+        cand_tokens = set(re.findall(r"\w+", draft.incoming.lower()))
+        overlap = len([t for t in (incoming_tokens & cand_tokens) if len(t) > 2])
+        score += overlap * 3.0
+
+        candidates.append(
+            DialogueExemplar(
+                incoming=draft.incoming.strip(),
+                reply=reply_text,
+                contact_name=draft_contact.name,
+                scope=scope,
+                score=score,
+            )
+        )
+
+    # Source 2: Real sequential WhatsApp messages (inbound followed by outbound)
+    msg_query = (
+        select(WhatsAppMessage, Contact)
+        .join(Contact, WhatsAppMessage.contact_id == Contact.id)
+        .order_by(WhatsAppMessage.sent_at.desc())
+        .limit(60)
+    )
+    msg_rows = list((await session.execute(msg_query)).all())
+    chronological = list(reversed(msg_rows))
+    for i in range(len(chronological) - 1):
+        m_curr, c_curr = chronological[i]
+        m_next, c_next = chronological[i + 1]
+        if (
+            m_curr.contact_id == m_next.contact_id
+            and m_curr.direction == "in"
+            and m_next.direction == "out"
+        ):
+            in_body = m_curr.body.strip()
+            out_body = m_next.body.strip()
+            if not in_body or not out_body:
+                continue
+
+            score = 0.0
+            if contact and m_curr.contact_id == contact.id:
+                score += 10.0
+                scope = f"contact:{contact.id}"
+            elif contact and contact.relationship and contact.relationship == c_curr.relationship:
+                score += 5.0
+                scope = f"relationship:{contact.relationship}"
+            else:
+                score = "global"
+
+            cand_tokens = set(re.findall(r"\w+", in_body.lower()))
+            overlap = len([t for t in (incoming_tokens & cand_tokens) if len(t) > 2])
+            score += overlap * 3.0
+
+            candidates.append(
+                DialogueExemplar(
+                    incoming=in_body,
+                    reply=out_body,
+                    contact_name=c_curr.name,
+                    scope=scope,
+                    score=score,
+                )
+            )
+
+    # Deduplicate candidate pairs by (incoming, reply)
+    seen = set()
+    unique_candidates: list[DialogueExemplar] = []
+    for cand in sorted(candidates, key=lambda c: c.score, reverse=True):
+        key = (cand.incoming.lower(), cand.reply.lower())
+        if key not in seen:
+            seen.add(key)
+            unique_candidates.append(cand)
+        if len(unique_candidates) >= limit:
+            break
+
+    return unique_candidates
+
+
+async def extract_chat_insights(
+    session: AsyncSession,
+    model_router,
+    contact: Contact,
+    messages: list[WhatsAppMessage],
+) -> list[str]:
+    """Analyze recent dialogue with a contact to extract communication habits and facts."""
+    if len(messages) < 2:
+        return []
+
+    # Must contain at least one outbound message from Morice to learn his habits
+    outbound = [m for m in messages if m.direction == "out"]
+    if not outbound:
+        return []
+
+    import json
+    import logging
+    from src.llm.base import ChatMessage
+    from src.llm.router import TaskClass
+
+    logger = logging.getLogger(__name__)
+
+    transcript = "\n".join(
+        f"{'MORICE' if m.direction == 'out' else contact.name}: {m.body}"
+        for m in messages[-10:]
+    )
+
+    prompt = f"""You analyze personal WhatsApp chats between MORICE and {contact.name} ({contact.relationship or 'contact'}).
+
+Identify:
+1. Specific communication style habits MORICE displays with this person (e.g., specific greetings, slang/vernacular like Swahili/Sheng phrases, message length, punctuation, tone).
+2. Enduring relationship or personal facts mentioned about either party (e.g. mutual friends, projects, occupations, meeting preferences).
+
+Conversation:
+=== CHAT TRANSCRIPT ===
+{transcript}
+=== END CHAT TRANSCRIPT ===
+
+Respond with ONLY a JSON object:
+{{
+  "style_habits": ["<one concise style observation>", ...],
+  "facts": ["<one concise factual statement>", ...]
+}}
+"""
+    try:
+        routed = model_router.resolve(TaskClass.ROUTINE, session)
+        chunks = [
+            c
+            async for c in routed.provider.stream_chat(
+                [ChatMessage(role="user", content=prompt)],
+                system="Extract factual and stylistic observations in JSON only.",
+            )
+        ]
+        text = "".join(chunks).strip()
+        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
+        if not match:
+            return []
+        data = json.loads(match.group())
+    except Exception as exc:
+        logger.warning("Failed to extract chat insights for %s: %s", contact.name, exc)
+        return []
+
+    learned_items: list[str] = []
+    scope = f"contact:{contact.id}"
+
+    style_habits = data.get("style_habits", [])
+    if isinstance(style_habits, list):
+        for habit in style_habits:
+            habit_str = str(habit).strip()
+            if habit_str:
+                dim = f"habit:{habit_str[:80]}"
+                await _upsert_pattern(
+                    session,
+                    dimension=dim[:MAX_DIMENSION_LEN],
+                    scope=scope,
+                    value=habit_str,
+                    evidence_count=2,
+                    source="chat_extraction",
+                    confidence=0.75,
+                )
+                learned_items.append(f"Style: {habit_str}")
+
+    facts = data.get("facts", [])
+    if isinstance(facts, list):
+        from src.memory import get_memory_service
+        memory_svc = get_memory_service()
+        for fact in facts:
+            fact_str = str(fact).strip()
+            if fact_str:
+                try:
+                    await memory_svc.ingest(
+                        session,
+                        title=f"Chat fact: {contact.name}",
+                        content=fact_str,
+                        kind="fact",
+                        provenance=f"Observed in WhatsApp conversation with {contact.name}",
+                        style_scope=scope,
+                    )
+                    learned_items.append(f"Fact: {fact_str}")
+                except Exception as exc:
+                    logger.warning("Failed to store extracted fact: %s", exc)
+
+    if learned_items:
+        await session.commit()
+    return learned_items
+

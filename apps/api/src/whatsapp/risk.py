@@ -84,6 +84,7 @@ _FINANCIAL = [
     r"\bpesa\b", r"\bhela\b", r"\bfedha\b", r"\bmkopo\b", r"\bnaomba\b",
     r"\btuma\b", r"\blipa\b", r"\bmalipo\b", r"\bdeni\b",
     r"\$\s?\d", r"\b\d+\s?(usd|eur|tzs|kes|shillings?)\b",
+    r"\binvest(ment|ing|or)?\b",
     # "send me 50000" is a money request; a bare "send me the report" is not.
     # Matching the verb alone flagged every document request as financial,
     # which is worse than useless — an over-broad money detector trains
@@ -96,7 +97,8 @@ _EMPLOYMENT = [
     r"\bjob offer\b", r"\bcontract\b", r"\bresign\b", r"\bnotice period\b",
     r"\bsalary\b", r"\bhir(e|ing)\b", r"\bfired?\b", r"\bterminat(e|ion)\b",
     r"\bemployment\b", r"\binterview\b", r"\bstart date\b", r"\boffer letter\b",
-    r"\bkazi\b", r"\bajira\b", r"\bmshahara\b",
+    r"\b(ajira|kazi mpya|kazi ya|kuacha kazi|kufukuzwa kazi|kutafuta kazi|usaili wa kazi|mkataba wa kazi)\b",
+    r"\bmshahara\b",
 ]
 
 _LEGAL = [
@@ -158,7 +160,8 @@ _URGENCY_PRESSURE = [
 # Attempts to treat the message as instructions to ARIA rather than as
 # conversation with MORICE. A WhatsApp message is content. Always.
 _INJECTION = [
-    r"\bignore (all |your |the )?(previous |prior |above )?(instructions?|rules?|prompt)\b",
+    r"\bignore (all |your |the )?(previous |prior |above )?(instructions?|rules?|prompt)?\b",
+    r"\bignore the above\b",
     r"\bdisregard (your|all|the|previous)\b",
     r"\byou are now\b", r"\bnew instructions?\b", r"\bsystem prompt\b",
     r"\bact as\b", r"\bpretend (to be|you are)\b", r"\bjailbreak\b",
@@ -168,7 +171,8 @@ _INJECTION = [
     # details") rather than requiring the noun to follow immediately.
     r"\bsend (me )?(all|everything|his|her|their)\b(\s+\w+){0,3}\s+"
     r"(data|information|info|details|messages|contacts|numbers)\b",
-    r"\breveal\b", r"\bprint your\b", r"\bwhat (is|are) your (rules|instructions)\b",
+    r"\breveal\b", r"\bprint your\b",
+    r"\bwhat (is|are) (the |your )?(\w+ )?(rules|instructions|prompt)\b",
     r"\bpuuza\b",  # Kiswahili: "ignore"
 ]
 
@@ -244,6 +248,8 @@ def classify_incoming(text: str, *, relationship: str = "unknown") -> RiskAssess
 
     for name, patterns, category_level, description in _CATEGORY_RULES:
         if _matches(patterns, text):
+            if name == "scheduling" and _is_greeting(text) and not _matches([r"\bmeet(ing)?\b", r"\bsaa ngapi\b", r"\btutaonana\b", r"\bkesho\b", r"\bunakuja\b", r"\breschedul\b", r"\bpostpone\b"], text):
+                continue
             categories.append(name)
             reasons.append(f"{description} ({name})")
             level = highest(level, category_level)
@@ -351,6 +357,8 @@ def action_type(text: str) -> str:
         return "documents"
     if _matches(_COMMITMENT, text):
         return "commitment"
+    if _is_greeting(text) and not _matches([r"\bmeet(ing)?\b", r"\bsaa ngapi\b", r"\btutaonana\b", r"\bkesho\b", r"\bunakuja\b", r"\breschedul\b", r"\bpostpone\b"], text):
+        return "greeting"
     if _matches(_SCHEDULING, text):
         return "scheduling"
     if _is_greeting(text):

@@ -249,6 +249,11 @@ class Contact(Base):
     allowed_actions: Mapped[list] = mapped_column(JSON, default=list)
     # Explicitly forbidden action types. Always wins over allowed_actions.
     forbidden_actions: Mapped[list] = mapped_column(JSON, default=list)
+    # Specific topics allowed or restricted for this contact
+    allowed_topics: Mapped[list] = mapped_column(JSON, default=list)
+    restricted_topics: Mapped[list] = mapped_column(JSON, default=list)
+    # Contact language preference: auto | kiswahili | english | sheng
+    language_preference: Mapped[str] = mapped_column(String(30), default="auto")
     # Per-contact off switch — silence ARIA for one person without touching
     # anyone else, and without disabling her globally.
     paused: Mapped[bool] = mapped_column(default=False)
@@ -256,6 +261,9 @@ class Contact(Base):
     # until this is explicitly cleared.
     taken_over: Mapped[bool] = mapped_column(default=False)
     taken_over_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

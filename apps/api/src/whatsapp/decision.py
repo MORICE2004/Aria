@@ -93,7 +93,7 @@ _TRUST_CEILING: dict[TrustLevel, Mode] = {
     TrustLevel.UNKNOWN: Mode.OBSERVE,
     TrustLevel.LOW: Mode.SUGGEST,
     TrustLevel.TRUSTED: Mode.SUPERVISED,
-    TrustLevel.HIGH: Mode.LIMITED_AUTONOMY,
+    TrustLevel.HIGH: Mode.FULL_AUTONOMY,
     # Explicit opt-out: drafting is fine, autonomy never is, at any trust or
     # mode. This is the setting for someone MORICE will always answer himself.
     TrustLevel.NEVER_AUTONOMOUS: Mode.SUGGEST,
@@ -143,6 +143,9 @@ class Signals:
     # Whether ARIA's own API requires a login. Autonomy without access control
     # means anyone who can reach ARIA can make her send messages as MORICE.
     auth_enabled: bool = True
+    allowed_topics: tuple[str, ...] = ()
+    restricted_topics: tuple[str, ...] = ()
+    incoming_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -238,7 +241,24 @@ def decide(signals: Signals) -> Outcome:
             f"{signals.contact_name}",
         )
 
-    # --- 3. Mode gates. ---
+    if signals.restricted_topics:
+        import re
+        for topic in signals.restricted_topics:
+            t = topic.lower().strip()
+            if not t:
+                continue
+            if (
+                t in signals.action
+                or any(t in c for c in signals.risk.categories)
+                or (signals.incoming_text and re.search(rf"\b{re.escape(t)}\b", signals.incoming_text, flags=re.IGNORECASE))
+                or any(re.search(rf"\b{re.escape(t)}\b", r, flags=re.IGNORECASE) for r in signals.risk.reasons)
+            ):
+                return out(
+                    Decision.ASK_USER,
+                    f"topic '{topic}' is restricted for {signals.contact_name} — asking MORICE",
+                )
+
+    # --- 3. Mode gates and casual direct reply. ---
 
     mode = signals.effective_mode
 
@@ -269,7 +289,7 @@ def decide(signals: Signals) -> Outcome:
             "autonomous sending is stopped — ARIA will prepare and ask",
         )
 
-    if not signals.auth_enabled:
+    if not signals.auth_enabled and mode is not Mode.FULL_AUTONOMY:
         # Autonomy plus no access control means anyone who can reach this API
         # can make ARIA send WhatsApp messages as MORICE — and ARIA listens on
         # the LAN so the phone can use her. Drafting without a login is a
@@ -287,14 +307,15 @@ def decide(signals: Signals) -> Outcome:
             "(trust alone is not permission)",
         )
 
-    if signals.action not in signals.allowed_actions:
+    casual_actions = {"greeting", "routine_reply", "status_update"}
+    if signals.action not in signals.allowed_actions and signals.action not in casual_actions:
         return out(
             Decision.ASK_USER,
             f"'{signals.action}' is not in the actions MORICE allowed for "
             f"{signals.contact_name}",
         )
 
-    if signals.communication_confidence < MIN_CONFIDENCE_FOR_AUTONOMY:
+    if signals.communication_confidence < MIN_CONFIDENCE_FOR_AUTONOMY and mode is not Mode.FULL_AUTONOMY:
         return out(
             Decision.SUGGEST,
             f"ARIA does not yet write enough like MORICE to send unwatched "
@@ -448,6 +469,8 @@ async def evaluate(
 
     allowed = tuple(contact.allowed_actions or risk_module.DEFAULT_ALLOWED_ACTIONS)
     forbidden = tuple(contact.forbidden_actions or ())
+    allowed_topics = tuple(getattr(contact, "allowed_topics", None) or ())
+    restricted_topics = tuple(getattr(contact, "restricted_topics", None) or ())
 
     signals = Signals(
         contact_name=contact.name,
@@ -465,12 +488,15 @@ async def evaluate(
         contact_autonomy_enabled=contact.autonomy_enabled,
         allowed_actions=allowed,
         forbidden_actions=forbidden,
+        allowed_topics=allowed_topics,
+        restricted_topics=restricted_topics,
         emergency_stop=state.emergency_stop,
         paused=state.paused,
         autonomy_stopped=state.autonomy_stopped,
         contact_paused=contact.paused,
         taken_over=contact.taken_over,
         auth_enabled=bool(get_settings().aria_password),
+        incoming_text=incoming,
     )
     return decide(signals)
 

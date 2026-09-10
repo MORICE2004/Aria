@@ -23,7 +23,7 @@ const POST_TIMEOUT_MS = 20000;
  */
 export function makeDeliver(cfg, { log = console } = {}) {
   return async function deliverToAria(record) {
-    const { handle, name, body, direction, dedupeKey, timestamp } = record;
+    const { handle, name, body, direction, dedupeKey, timestamp, audio_base64, mimetype } = record;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
     try {
@@ -37,6 +37,8 @@ export function makeDeliver(cfg, { log = console } = {}) {
           handle,
           name,
           body,
+          audio_base64,
+          mimetype,
           direction,
           message_id: dedupeKey,
           timestamp,

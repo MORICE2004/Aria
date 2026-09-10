@@ -20,12 +20,17 @@ Write-Host ""
 Write-Host "  Starting ARIA..." -ForegroundColor Cyan
 
 # --- 1. Databases --------------------------------------------------------
-Write-Host "  [1/4] Databases (Docker)..." -NoNewline
-Push-Location $root
-docker compose up -d 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) { Write-Host " ok" -ForegroundColor Green }
-else { Write-Host " FAILED - is Docker Desktop running?" -ForegroundColor Red }
-Pop-Location
+$useSqlite = (Get-Content (Join-Path $root ".env") -ErrorAction SilentlyContinue | Where-Object { $_ -match "^DATABASE_URL=.*sqlite" })
+if ($useSqlite) {
+  Write-Host "  [1/4] Databases (SQLite)... ok" -ForegroundColor Green
+} else {
+  Write-Host "  [1/4] Databases (Docker)..." -NoNewline
+  Push-Location $root
+  docker compose up -d 2>&1 | Out-Null
+  if ($LASTEXITCODE -eq 0) { Write-Host " ok" -ForegroundColor Green }
+  else { Write-Host " FAILED - is Docker Desktop running?" -ForegroundColor Red }
+  Pop-Location
+}
 
 # --- 2. API --------------------------------------------------------------
 # --host 0.0.0.0 so the phone can reach it, not just this PC.

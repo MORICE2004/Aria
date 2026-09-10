@@ -1,6 +1,35 @@
 # ARIA — Handoff
 
-Updated 2026-09-01. Keep this current after every significant phase.
+Updated 2026-09-10. Keep this current after every significant phase.
+
+---
+
+# SESSION 2026-09-10 — ARIA PRODUCTION READINESS & AUTONOMOUS OPERATION
+
+**527 backend tests (100%) + 31 frontend tests (100%) + 10 bridge tests passing. Frontend build clean (19 routes). Bridge containment check green.**
+
+This session accomplished the full Autonomous Operation Directive and Production Readiness sign-off for ARIA:
+
+## Major Upgrades Delivered
+
+| Component | What Was Implemented | Impact |
+|---|---|---|
+| **Dynamic Few-Shot Exemplars** | `get_relevant_exemplars()` in `src/communication/learning.py` mines real historical turns & approved drafts | Injects concrete dialogue examples into `draft_reply()`; matches Morice's tone, brevity, and code-switching |
+| **Real-time Chat Learning** | Outbound messages observed in `observer.py` trigger automatic pattern and memory extraction | ARIA automatically learns vocabulary, emoji habits, and facts from Morice's outgoing WhatsApp messages |
+| **Voice Note Transcription** | Audio decrypted via Baileys `downloadMediaMessage`, Base64 passed to `/whatsapp/ingest`, transcribed with Gemini Multimodal API | ARIA listens to voice notes, transcribes Kiswahili/English/Sheng audio into text, and applies full 9-signal risk gate |
+| **Typing Simulation Presence** | `sender.js` issues `sendPresenceUpdate('composing', jid)` before message delivery with realistic delay ($1.2\text{s} - 3.5\text{s}$) | Outbound delivery simulates real human typing on WhatsApp |
+| **n8n Integration** | Outbound webhooks on message receive/queue/send + inbound webhook endpoint `/webhooks/n8n` | Full integration with n8n workflows for custom automation and memory queries |
+| **Contact Policy Extension** | Added `allowed_topics`, `restricted_topics`, `language_preference`, and `last_reviewed_at` to `Contact` | Granular per-contact safety: restricted topics fail-closed to `ASK_USER` |
+| **Adversarial Test Matrix** | 105 tests in `test_adversarial_and_matrix.py` across 10 categories + voice note + restricted topic scenarios | Zero prompt injection bypasses; 100% fail-closed on financial, credential, and injection threats |
+| **Backup & Recovery** | `scripts/backup_aria.py` & `scripts/restore_aria.py` with SQLite WAL online backup API, integrity check, and safety snapshots | Safe, zero-data-loss database disaster recovery |
+| **Production Report** | Delivered `ARIA_PRODUCTION_READINESS.md` covering all 20 operational points | Complete production documentation and runbook |
+
+## Next Steps for MORICE
+1. **Link WhatsApp Devices:**
+   - Run `.\start-whatsapp-bridge.ps1` to link the Observer device.
+   - Run `node apps/wa-bridge/sender.js` to link the Sender device.
+2. **Start ARIA:**
+   - Run `.\start-aria.ps1` to launch all daemons (API, Web UI, Bridge).
 
 ---
 

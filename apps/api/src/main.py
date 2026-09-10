@@ -34,6 +34,7 @@ from src.routers import (
     research,
     style,
     tasks,
+    webhooks,
     whatsapp,
 )
 
@@ -184,6 +185,7 @@ def create_app() -> FastAPI:
     app.include_router(briefing.router, dependencies=protected)
     app.include_router(documents.router, dependencies=protected)
     app.include_router(research.router, dependencies=protected)
+    app.include_router(webhooks.router)
     # Secret-authenticated, called by the local OpenClaw gateway — not JWT.
     app.include_router(whatsapp.ingest_router)
 

@@ -66,3 +66,21 @@ class GeminiProvider(LLMProvider):
                 usage.prompt_token_count,
                 usage.candidates_token_count,
             )
+
+    async def transcribe_audio(
+        self, audio_bytes: bytes, mime_type: str = "audio/ogg"
+    ) -> str:
+        """Transcribe an audio note using Gemini's native multimodal understanding."""
+        from google.genai import types
+
+        part = types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
+        prompt = (
+            "Listen to this audio note and transcribe it verbatim. "
+            "Accurately preserve whatever language is spoken (e.g. Swahili, Sheng, English, or code-mixed). "
+            "Return ONLY the transcribed text, with no extra commentary or quotes."
+        )
+        response = await self._client.aio.models.generate_content(
+            model=self._model,
+            contents=[part, prompt],
+        )
+        return (response.text or "").strip()

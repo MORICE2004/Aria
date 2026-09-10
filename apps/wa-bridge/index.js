@@ -25,6 +25,7 @@
 // Exports are named; the default export is makeWASocket itself.
 import makeWASocket, {
   DisconnectReason,
+  downloadMediaMessage,
   fetchLatestBaileysVersion,
   useMultiFileAuthState,
 } from "baileys";
@@ -151,8 +152,24 @@ async function start() {
       if (jid === "status@broadcast") continue; // status updates, not conversation
       if (jid.endsWith("@g.us")) continue; // groups: out of scope for now
 
-      const body = extractText(msg.message);
-      if (!body) continue; // media-only, reactions, receipts, etc.
+      let body = extractText(msg.message);
+      let audioBase64 = null;
+      let mimetype = "audio/ogg";
+
+      if (!body && msg.message?.audioMessage) {
+        try {
+          const buffer = await downloadMediaMessage(msg, "buffer", {}, { logger: log });
+          if (buffer) {
+            audioBase64 = buffer.toString("base64");
+            mimetype = msg.message.audioMessage.mimetype || "audio/ogg";
+            body = "[Voice Note]";
+          }
+        } catch (err) {
+          log.warn("Failed to download voice note media: " + (err?.message || err));
+        }
+      }
+
+      if (!body && !audioBase64) continue; // reactions, unhandled media, etc.
 
       // fromMe = MORICE's own outgoing message. Worth forwarding: it is how
       // ARIA learns his writing style. Marked "out" so it is never treated
@@ -166,6 +183,8 @@ async function start() {
         handle: jid,
         name: msg.pushName || "",
         body,
+        audio_base64: audioBase64,
+        mimetype,
         direction,
         timestamp: Number(msg.messageTimestamp) || null,
         receivedAt: Date.now(),

@@ -50,3 +50,7 @@ apps/wa-bridge/qr-current-*.html
 # Spooled messages are real personal conversation content awaiting delivery.
 apps/wa-bridge/spool/
 backups/
+*.db
+*.db-journal
+*.db-wal
+*.bak

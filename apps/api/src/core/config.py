@@ -97,6 +97,10 @@ class Settings(BaseSettings):
     web_search_provider: str = "duckduckgo"
     tavily_api_key: str = ""
 
+    # --- n8n & External Webhooks ---
+    n8n_webhook_url: str = ""
+    webhook_secret: str = ""
+
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
 
