@@ -37,9 +37,11 @@ class ScreenshotOut(BaseModel):
 async def browser_status():
     """Check browser automation availability."""
     try:
+        import importlib.metadata
         import playwright
-        return {"available": True, "provider": "playwright", "version": playwright.__version__}
-    except ImportError:
+        version = importlib.metadata.version("playwright")
+        return {"available": True, "provider": "playwright", "version": version}
+    except (ImportError, Exception):
         return {
             "available": False,
             "provider": "playwright",

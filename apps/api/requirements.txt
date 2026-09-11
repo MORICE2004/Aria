@@ -34,3 +34,5 @@ pytest~=8.3
 pytest-asyncio~=0.25     # lets tests await async code
 httpx~=0.28              # HTTP client used by FastAPI's test client
 aiosqlite~=0.20          # in-memory SQLite driver so tests need no Postgres
+playwright>=1.50.0       # headless browser automation (Playwright Chromium)
+pyee>=12.0.0             # event emitter dependency for Playwright
