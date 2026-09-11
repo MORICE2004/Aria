@@ -726,7 +726,7 @@ async def get_relevant_exemplars(
                 score += 5.0
                 scope = f"relationship:{contact.relationship}"
             else:
-                score = "global"
+                scope = "global"
 
             cand_tokens = set(re.findall(r"\w+", in_body.lower()))
             overlap = len([t for t in (incoming_tokens & cand_tokens) if len(t) > 2])

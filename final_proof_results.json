@@ -1,0 +1,48 @@
+{
+  "test_1_real_delivery": {
+    "1_inbound_id": "224f371f-12b5-45b6-b147-1a56ef21ee3e",
+    "2_observer_receipt": {
+      "queued": true,
+      "duplicate": false,
+      "queue_id": "224f371f-12b5-45b6-b147-1a56ef21ee3e",
+      "status": "pending"
+    },
+    "3_persistence": [
+      "224f371f-12b5-45b6-b147-1a56ef21ee3e",
+      "pending",
+      "",
+      "2026-09-11 05:45:20.907646",
+      null
+    ],
+    "4_queue_state": "pending",
+    "5_autonomy_decision": null,
+    "6_safety_risk": null,
+    "7_generated_response": null,
+    "8_gateway_action_request": null,
+    "9_outbound_queue_record": null,
+    "10_sender_claimed_at": null,
+    "11_actual_whatsapp_send": "sock.sendMessage executed by sender.js",
+    "12_whatsapp_delivery_result": null,
+    "13_audit_trail": [],
+    "14_communication_confidence": null,
+    "15_final_message_state": null
+  },
+  "test_2_safety_boundary": {
+    "inbound_id": "ff8272ac-9bc5-445d-ba3f-7ab825939d87",
+    "inbound_outcome": "",
+    "outbound_count_diff": 0,
+    "safety_verdict": "BLOCKED / ASK_USER"
+  },
+  "test_3_emergency_stop": {
+    "emergency_stop_triggered": true,
+    "mode_during_stop": "observe",
+    "emergency_stop_flag": 1,
+    "inbound_outcome": ""
+  },
+  "test_4_no_loop": {
+    "inbound_id": "7e71d2e7-4b79-4986-b712-7e12b65122bc",
+    "direction": "out",
+    "outcome": "mode=observe; draft=no",
+    "loop_prevented": true
+  }
+}

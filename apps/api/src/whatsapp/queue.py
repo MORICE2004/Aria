@@ -325,8 +325,11 @@ class QueueWorker:
                     outcome = await self._process(session, row)
                     await mark_done(session, row, outcome or "")
                 except Exception as exc:  # noqa: BLE001 — every failure is retryable
+                    row_id = row.id
                     await session.rollback()
-                    await mark_failed(session, row, f"{type(exc).__name__}: {exc}")
+                    fresh_row = await session.get(InboundMessage, row_id)
+                    if fresh_row is not None:
+                        await mark_failed(session, fresh_row, f"{type(exc).__name__}: {exc}")
             handled += 1
 
     async def _run(self) -> None:
