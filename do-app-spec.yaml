@@ -1,0 +1,95 @@
+# DigitalOcean App Platform Specification for ARIA
+# Deploy with: doctl apps create --spec do-app-spec.yaml
+name: aria-production
+region: nyc
+
+services:
+  # ----------------------------------------------------------------------------
+  # FastAPI Core & Background Workers (Inbound Drain, Proactive Engine)
+  # ----------------------------------------------------------------------------
+  - name: api
+    dockerfile_path: Dockerfile.api
+    instance_count: 1
+    instance_size_slug: basic-m # 1 vCPU, 2GB RAM for Playwright Chromium
+    http_port: 8000
+    routes:
+      - path: /
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 15
+      period_seconds: 10
+      timeout_seconds: 5
+      failure_threshold: 3
+    envs:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DATABASE_URL
+        value: ${aria-db.DATABASE_URL}
+      - key: REDIS_URL
+        value: ${aria-redis.REDIS_URL}
+      - key: CORS_ORIGINS
+        value: https://aria-web.vercel.app
+        scope: RUN_TIME
+      - key: ARIA_PASSWORD
+        scope: RUN_TIME
+        type: SECRET
+      - key: SECRET_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      - key: OPENCLAW_INGEST_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: WHATSAPP_WORKER_ENABLED
+        value: "true"
+      - key: PROACTIVE_ENABLED
+        value: "true"
+
+workers:
+  # ----------------------------------------------------------------------------
+  # WhatsApp Observer Worker: Continuous read-only WebSocket listener
+  # ----------------------------------------------------------------------------
+  - name: whatsapp-observer
+    dockerfile_path: Dockerfile.wa-bridge
+    run_command: node index.js
+    instance_count: 1
+    instance_size_slug: basic-xxs # 512MB RAM
+    envs:
+      - key: ARIA_API_URL
+        value: http://api:8000/whatsapp
+      - key: ARIA_INGEST_SECRET
+        scope: RUN_TIME
+        type: SECRET
+
+  # ----------------------------------------------------------------------------
+  # WhatsApp Sender Worker: Dedicated outbound delivery process
+  # ----------------------------------------------------------------------------
+  - name: whatsapp-sender
+    dockerfile_path: Dockerfile.wa-bridge
+    run_command: node sender.js
+    instance_count: 1
+    instance_size_slug: basic-xxs # 512MB RAM
+    envs:
+      - key: ARIA_API_URL
+        value: http://api:8000/whatsapp
+      - key: ARIA_INGEST_SECRET
+        scope: RUN_TIME
+        type: SECRET
+
+databases:
+  - name: aria-db
+    engine: PG
+    version: "16"
+    production: true
+  - name: aria-redis
+    engine: REDIS
+    version: "7"
+    production: false

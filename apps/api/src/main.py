@@ -146,17 +146,38 @@ def create_app() -> FastAPI:
     # ranges: it uses 100.64.0.0/10, the carrier-grade NAT block. Without this
     # the dashboard loads over the tunnel and every API call fails CORS —
     # which looks like ARIA being broken rather than a policy decision.
+    if settings.sentry_dsn:
+        try:
+            import sentry_sdk
+            sentry_sdk.init(
+                dsn=settings.sentry_dsn,
+                environment=settings.app_env,
+                traces_sample_rate=0.1,
+            )
+            logger.info("Sentry monitoring initialized for %s", settings.app_env)
+        except ImportError:
+            logger.warning("sentry_dsn configured but sentry_sdk is not installed")
+
+    # CORS: Allow dashboard on localhost, private LAN, Tailscale, Vercel deployments,
+    # and any domains explicitly configured in settings.cors_origins.
+    allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    if settings.cors_origins:
+        allowed_origins.extend([o.strip() for o in settings.cors_origins.split(",") if o.strip()])
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=allowed_origins,
         allow_origin_regex=(
             r"^https?://("
-            r"192\.168\.\d{1,3}\.\d{1,3}"                      # home Wi-Fi
+            r"localhost"
+            r"|127\.0\.0\.1"
+            r"|192\.168\.\d{1,3}\.\d{1,3}"                      # home Wi-Fi
             r"|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"                  # private
             r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"      # private
             r"|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"  # Tailscale
             r"|[a-z0-9-]+\.[a-z0-9-]+\.ts\.net"                # Tailscale MagicDNS
-            r")(:3000)?$"
+            r"|[a-zA-Z0-9_-]+\.vercel\.app"                    # Vercel preview & production deployments
+            r")(:[0-9]+)?$"
         ),
         allow_credentials=True,
         allow_methods=["*"],

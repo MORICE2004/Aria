@@ -1,0 +1,24 @@
+# Production Dockerfile for ARIA WhatsApp Bridge (Observer & Sender)
+FROM node:20-slim
+
+ENV NODE_ENV=production
+
+WORKDIR /app
+
+# Install dependencies
+COPY apps/wa-bridge/package*.json ./
+RUN npm ci --only=production
+
+# Copy application code
+COPY apps/wa-bridge/*.js ./
+
+# Create directories for persistent auth states and offline spool
+RUN mkdir -p /app/auth /app/auth-sender /app/spool
+
+# Volumes should be mounted by Docker Compose:
+# /app/auth        -> persistent volume for observer credentials
+# /app/auth-sender -> persistent volume for sender credentials
+# /app/spool       -> persistent volume for offline message backlog
+
+# Default to observer mode; overridden in docker-compose for sender
+CMD ["node", "index.js"]

@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     n8n_webhook_url: str = ""
     webhook_secret: str = ""
 
+    # --- CORS & Production Networking ---
+    # Comma-separated list of allowed origins (e.g. "https://aria.yourdomain.com,https://aria.vercel.app")
+    cors_origins: str = ""
+
+    # --- Observability ---
+    sentry_dsn: str = ""
+
     model_config = SettingsConfigDict(env_file=_ENV_FILE, extra="ignore")
 
 
